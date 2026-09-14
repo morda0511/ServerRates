@@ -1,0 +1,9 @@
+bin/
+obj/
+*.user
+.vs/
+thunderstore/packs/
+Directory.Build.props
+*.dll
+!thunderstore/ServerRates/plugins/**/*.dll
+nexus/ServerRates/BepInEx/

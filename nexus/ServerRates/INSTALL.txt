@@ -1,0 +1,14 @@
+﻿ServerRates 1.4.4 — Nexus pack
+
+DEDICATED SERVER ONLY. Chat commands work for console players (no admin / SteamID).
+
+Chat examples:
+  !sr_wood 9
+  !sr_meat 5
+  !rates status
+  !rates help
+
+Install: merge zip into dedicated server so DLL is at
+  BepInEx\plugins\ServerRates\ServerRates.dll
+
+See README.md
