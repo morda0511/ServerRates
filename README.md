@@ -111,43 +111,131 @@ PC players can also use the F5 console without `/`: `sr_wood 9`, `rates cmds`, �
 | `/rates set wood 9` | Same as `/sr_wood 9` |
 
 ### General
-`/sr_enabled` · `/sr_chatcommandsenabled` · `/sr_chatcommandprefix`
+| Command | Description |
+|---|---|
+| `/sr_enabled` | Master switch (true/false) |
+| `/sr_chatcommandsenabled` | Allow chat rate commands |
+| `/sr_chatcommandprefix` | Chat prefix (default `/`) |
 
 ### Skills
-`/sr_skillgain` · `/sr_skillloss`
+| Command | Description |
+|---|---|
+| `/sr_skillgain` | Skill XP gain percent (100 = vanilla) |
+| `/sr_skillloss` | Skill loss on death percent |
 
 ### Combat
-`/sr_playerdmg` · `/sr_enemydmg` · `/sr_enemyspeed` · `/sr_enemystars` · `/sr_events` · `/sr_worldlevel` · `/sr_passivemobs` · `/sr_playerevents`
+| Command | Description |
+|---|---|
+| `/sr_playerdmg` | Player damage percent |
+| `/sr_enemydmg` | Enemy damage percent |
+| `/sr_enemyspeed` | Enemy speed / size percent |
+| `/sr_enemystars` | Enemy star-up rate percent |
+| `/sr_events` | Raid / event frequency percent |
+| `/sr_worldlevel` | World level 0–10 |
+| `/sr_passivemobs` | Passive: Unchanged / On / Off |
+| `/sr_playerevents` | Toggle: Unchanged / On / Off |
 
 ### Survival
-`/sr_stamina` · `/sr_movestamina` · `/sr_staminaregen` · `/sr_eitr` · `/sr_adrenaline` · `/sr_food` · `/sr_durability` · `/sr_carry`
+| Command | Description |
+|---|---|
+| `/sr_stamina` | Stamina drain percent |
+| `/sr_movestamina` | Move stamina drain percent |
+| `/sr_staminaregen` | Stamina regen percent |
+| `/sr_eitr` | Eitr rate percent |
+| `/sr_adrenaline` | Adrenaline rate percent |
+| `/sr_food` | Food duration percent |
+| `/sr_durability` | Durability loss percent |
+| `/sr_carry` | Carry weight percent |
 
 ### Resources & loot master
-`/sr_resourcerate` · `/sr_groundamp` · `/sr_snapground` · `/sr_scatter` · `/sr_other`
+| Command | Description |
+|---|---|
+| `/sr_resourcerate` | Global Resource Rate percent (synced) |
+| `/sr_groundamp` | Category ground loot amp on/off |
+| `/sr_snapground` | Snap extra piles to ground |
+| `/sr_scatter` | Scatter force on extra piles |
+| `/sr_other` | Multiplier for uncategorized ground loot |
 
 ### Materials
-`/sr_wood` · `/sr_finewood` · `/sr_corewood` · `/sr_specialwood` · `/sr_ore` · `/sr_scrap` · `/sr_stone` · `/sr_flint` · `/sr_crystal` · `/sr_fuel` · `/sr_gems` · `/sr_boss`
+| Command | Description |
+|---|---|
+| `/sr_wood` | Basic wood drop multiplier |
+| `/sr_finewood` | Fine wood multiplier |
+| `/sr_corewood` | Core wood (RoundLog) multiplier |
+| `/sr_specialwood` | Elder / Ygg / Ash / Black wood |
+| `/sr_ore` | Raw ore multiplier |
+| `/sr_scrap` | Scrap metal multiplier |
+| `/sr_stone` | Stone multiplier |
+| `/sr_flint` | Flint multiplier |
+| `/sr_crystal` | Crystal / obsidian multiplier |
+| `/sr_fuel` | Coal / resin / tar multiplier |
+| `/sr_gems` | Coins / amber / rubies multiplier |
+| `/sr_boss` | Boss materials multiplier |
 
 ### Consumables
-`/sr_crops` · `/sr_seeds` · `/sr_mushrooms` · `/sr_berries` · `/sr_fish` · `/sr_potions`
+| Command | Description |
+|---|---|
+| `/sr_crops` | Crops multiplier |
+| `/sr_seeds` | Seeds / cones multiplier |
+| `/sr_mushrooms` | Mushrooms multiplier |
+| `/sr_berries` | Berries / honey multiplier |
+| `/sr_fish` | Fish multiplier |
+| `/sr_potions` | Meads / potions multiplier |
 
 ### Mob drops
-`/sr_hide` · `/sr_trophy` · `/sr_meat` · `/sr_parts` · `/sr_feathers` · `/sr_specialparts`
+| Command | Description |
+|---|---|
+| `/sr_hide` | Hides / pelts / scales multiplier |
+| `/sr_trophy` | Mob trophies multiplier |
+| `/sr_meat` | Meat multiplier |
+| `/sr_parts` | Bones / entrails / glands multiplier |
+| `/sr_feathers` | Feathers multiplier |
+| `/sr_specialparts` | Guck / ooze / soft tissue multiplier |
 
 ### Death
-`/sr_keepequip` · `/sr_keepinv` · `/sr_deleteitems` · `/sr_deleteunequipped` · `/sr_skillreset`
+| Command | Description |
+|---|---|
+| `/sr_keepequip` | Keep equipped gear (Unchanged/On/Off) |
+| `/sr_keepinv` | Keep full inventory |
+| `/sr_deleteitems` | Delete items on death |
+| `/sr_deleteunequipped` | Delete unequipped items |
+| `/sr_skillreset` | Reset skills on death |
 
 ### Build / craft
-`/sr_nobuildcost` · `/sr_nocraftcost` · `/sr_allpieces` · `/sr_allrecipes` · `/sr_noworkbench` · `/sr_toollocks`
+| Command | Description |
+|---|---|
+| `/sr_nobuildcost` | Free building |
+| `/sr_nocraftcost` | Free crafting |
+| `/sr_allpieces` | Unlock all build pieces |
+| `/sr_allrecipes` | Unlock all recipes |
+| `/sr_noworkbench` | No workbench range required |
+| `/sr_toollocks` | World-level tool locks |
 
 ### Map / portals
-`/sr_nomap` · `/sr_noportals` · `/sr_nobossportals` · `/sr_teleportall` · `/sr_dungeonbuild`
+| Command | Description |
+|---|---|
+| `/sr_nomap` | Disable map |
+| `/sr_noportals` | Disable portals |
+| `/sr_nobossportals` | Disable boss portals |
+| `/sr_teleportall` | Teleport with ores / metals |
+| `/sr_dungeonbuild` | Allow building in dungeons |
 
 ### World flags
-`/sr_nopseudo` · `/sr_nobuildfall` · `/sr_noheavysnow` · `/sr_allheavysnow` · `/sr_fire`
+| Command | Description |
+|---|---|
+| `/sr_nopseudo` | Disable pseudo drops |
+| `/sr_nobuildfall` | Buildings do not fall |
+| `/sr_noheavysnow` | No heavy snow |
+| `/sr_allheavysnow` | Force heavy snow rules |
+| `/sr_fire` | Fire world flag |
 
 ### Stations
-`/sr_smelter` · `/sr_fermenter` · `/sr_cooking` · `/sr_plants`
+| Command | Description |
+|---|---|
+| `/sr_smelter` | Smelter / kiln speed multiplier |
+| `/sr_fermenter` | Fermenter speed multiplier |
+| `/sr_cooking` | Cooking station speed multiplier |
+| `/sr_plants` | Plant grow speed multiplier |
 
 </details>
 
