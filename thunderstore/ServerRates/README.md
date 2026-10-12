@@ -1,131 +1,248 @@
-# ServerRates
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/server-rates-banner.png" alt="ServerRates Banner" width="100%"></p>
 
-**Dedicated-server rates for Valheim, built for crossplay.**
-PC, PlayStation and Xbox players all get the same rates. **Clients install nothing.** Tune loot, combat, skills, stamina, portals and more from the dedicated server. Console players change rates live in the normal text chat.
+<h1 align="center"><strong>ServerRates</strong></h1>
 
-**Dedicated server only** · Valheim 1.0 · BepInExPack 5.4.2350+. Listen servers / host-from-client are not supported.
+<p align="center"><strong>Your World. Your Rules. Your Rates.</strong></p>
 
-**Bug reports:** https://github.com/morda0511/ServerRates/issues
-**Discord:** https://discord.gg/aVKVVmyzj
+<p align="center">Take control of your Valheim server. Customize combat, skills, loot, survival, building, world mechanics and more through a flexible server side configuration system.</p>
 
----
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/divider-gold.png" width="100%" alt=""></p>
 
-## Features
+<h2 align="center"><strong>Overview</strong></h2>
 
-- **Loot:** global Resource Rate plus per-category multipliers (wood, ore, meat, hide, trophies, crops, fish, potions, ...). Extra piles spawn on the ground, not in the air.
-- **Combat & world:** player/enemy damage, enemy speed/size/stars, raids, world level, passive mobs.
-- **Skills & survival:** skill gain/loss, stamina, eitr, adrenaline, food duration, durability, carry weight.
-- **Building, travel, death:** free build/craft, unlock pieces/recipes, portals, map, keep inventory/equipment.
-- **Live:** edit the config file or type a chat command, rates apply instantly. Everybody sees a yellow message when a rate changes.
+<p align="center">ServerRates gives server owners the freedom to shape their own Valheim experience, from relaxed cooperative worlds to challenging survival adventures.</p>
 
----
+<p align="center">Configure gameplay rates, customize world rules, manage item drops, change skill progression and adjust crafting restrictions without manually editing game files.</p>
 
-## Chat commands (console + PC)
+<p align="center"><strong>Server side configuration</strong></p>
+<p align="center"><strong>Flexible gameplay settings</strong></p>
+<p align="center"><strong>In game chat commands</strong></p>
+<p align="center"><strong>Presets for quick configuration</strong></p>
+<p align="center"><strong>Detailed status and inspection tools</strong></p>
 
-Type in the **normal chat box**, **without a slash** (Valheim handles `/` locally and never sends it to the server):
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/divider-norse.png" width="100%" alt=""></p>
 
-```text
-sr_wood 9          set wood to x9
-sr_wood            show wood
-sr_loot 5          every loot category x5
-sr_mobs 3          all mob drops x3
-rates preset x5    loot x5, skill gain 500%, plants + fermenter x5
-rates status       what differs from vanilla
-rates reset all    back to vanilla
-```
+<h2 align="center"><strong>Installation</strong></h2>
 
-- Names can be abbreviated: `sr_fine` = `sr_finewood`. If a short name fits several, the server lists them.
-- Values: `5`, `x5`, `500%` all work. Toggles take `on` / `off` / `unchanged`.
-- Replies go **only to you**. Rate changes are announced to everybody.
-- PC players with the DLL on their client may also use `/sr_wood 9`.
-- Who may change rates is set by `ChatAccess` in the config:
-  `Everyone` (default, no adminlist needed, good for console) or `AdminOnly` (sender must be in the server adminlist). Anyone can always *read* values.
-- Turn chat commands off with `ChatCommandsEnabled = false`.
-- Server console / F5 (admins): the same commands, e.g. `sr_wood 9`, `rates status`.
+<p align="center"><strong>1. Install BepInEx</strong></p>
+<p align="center">Install BepInExPack for Valheim on your dedicated server.</p>
 
+<p align="center"><strong>2. Install ServerRates</strong></p>
+<p align="center">Install ServerRates on the dedicated server using your preferred mod manager or manual installation.</p>
 
-### Station info
+<p align="center"><strong>3. Start the server</strong></p>
+<p align="center">Launch the server once to generate the configuration file.</p>
 
-When you stand within 3 m of a smelter, kiln, furnace, cooking station or fermenter, the server shows a short message at the top left with the time **per item** (with your multiplier and the vanilla value for comparison). It is a plain message sent to you only, nothing is placed in the world. Switch it off with `sr_stationinfo off`, back on with `sr_stationinfo on`. `rates inspect` shows the same for the station next to you plus its stored values.
+<p align="center"><strong>4. Configure your world</strong></p>
+<p align="center">Edit the configuration or use the available chat commands to adjust your settings.</p>
 
-### How chat reaches the server
+<p align="center"><strong>Configuration file</strong></p>
+<p align="center"><code>BepInEx/config/com.morda.serverrates.cfg</code></p>
 
-Valheim sends chat from client to client, the server is normally not a recipient. ServerRates therefore lists the server as a pseudo player named **ServerRates** in the player list (option `ChatBridge`, on by default). That makes every client send its chat to the server as well, so commands work even when you are the only player online. Commands are swallowed by the server and never shown to other players. If another mod already adds the server as a player (e.g. Server Devcommands "Server chat"), ServerRates does not add a second entry.
+<p align="center"><strong>Players do not need to install ServerRates on their clients when using it as a server side mod.</strong></p>
 
-### Meta commands
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/divider-gold.png" width="100%" alt=""></p>
 
-| Command | Description |
-|---|---|
-| `rates help` | Short help |
-| `rates status` | Everything that differs from vanilla |
-| `rates list <group>` | Values of a group |
-| `rates cmds` | All groups and command names |
-| `rates get wood` / `rates set wood 9` | Read / write one value |
-| `rates preset vanilla\|x2\|x5\|x10` | Quick presets (any number 1-100) |
-| `rates reset <name\
-| `rates inspect` | Shows the stations within 8 m of you: stored values (owner, fuel, queue, ...) and the time **per item** with and without your multiplier |
-| `rates repair` | Like `inspect`, and sets a smelter's work-time store back to 0 ||group\|all>` | Back to vanilla |
+<h2 align="center"><strong>Requirements</strong></h2>
 
-### Groups (set several rates at once: `sr_<group> <value>`)
+<p align="center">Valheim Dedicated Server</p>
+<p align="center">BepInExPack for Valheim</p>
 
-| Group | Contains |
-|---|---|
-| `loot` | `materials` + `consumables` + `mobs` |
-| `materials` | wood, finewood, corewood, specialwood, ore, scrap, stone, flint, crystal, fuel, gems, boss |
-| `consumables` | crops, seeds, mushrooms, berries, fish, potions |
-| `mobs` | hide, trophy, meat, parts, feathers, specialparts |
-| `skills` | skillgain, skillloss |
-| `combat` | playerdmg, enemydmg, enemyspeed, enemystars, events, worldlevel, passivemobs, playerevents |
-| `survival` | stamina, movestamina, staminaregen, eitr, adrenaline, food, durability, carry |
-| `resources` | resourcerate, groundamp, maxpiles, other |
-| `death` | keepequip, keepinv, deleteitems, deleteunequipped, skillreset |
-| `build` | nobuildcost, nocraftcost, allpieces, allrecipes, noworkbench, toollocks |
-| `map` | nomap, noportals, nobossportals, teleportall, dungeonbuild |
-| `world` | nopseudo, nobuildfall, noheavysnow, allheavysnow, fire |
-| `stations` | smelter, fermenter, cooking, plants |
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/divider-norse.png" width="100%" alt=""></p>
 
-Every single rate is also its own command `sr_<name>`; `rates cmds` prints them all.
+<h2 align="center"><strong>Configuration Categories</strong></h2>
 
----
+<p align="center">Use the categories below to find the settings you want to customize.</p>
 
-## How values work
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/icon-combat.png" width="90" alt="Combat"></p>
+<h3 align="center"><strong>Combat</strong></h3>
+<p align="center">Customize player damage, enemy damage, enemy speed, enemy stars, world difficulty and event behavior.</p>
+<p align="center"><code>sr_playerdmg</code> &nbsp; <code>sr_enemydmg</code> &nbsp; <code>sr_enemyspeed</code></p>
+<p align="center"><code>sr_enemystars</code> &nbsp; <code>sr_events</code> &nbsp; <code>sr_worldlevel</code></p>
+<p align="center"><code>sr_passivemobs</code> &nbsp; <code>sr_playerevents</code></p>
 
-| Type | Meaning |
-|---|---|
-| **Percent** | `100` = vanilla, `200` = x2, `50` = half |
-| **Multiplier** | `1` = vanilla, `2` = x2, `10` = x10 |
-| **Toggle** | `Unchanged` / `On` / `Off` (`Off` removes the world flag, `Unchanged` leaves it alone) |
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/icon-skills.png" width="90" alt="Skills"></p>
+<h3 align="center"><strong>Skills</strong></h3>
+<p align="center">Control how quickly players gain skills and how much skill progress is lost.</p>
+<p align="center"><code>sr_skillgain</code> &nbsp; <code>sr_skillloss</code></p>
 
-Category loot multipliers stack on top of Resource Rate.
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/icon-loot.png" width="90" alt="Loot"></p>
+<h3 align="center"><strong>Loot and Resources</strong></h3>
+<p align="center">Adjust resource rates, ground item behavior, extra loot per drop and loot generation.</p>
+<p align="center"><code>sr_resourcerate</code> &nbsp; <code>sr_groundamp</code> &nbsp; <code>sr_maxpiles</code></p>
+<p align="center"><code>sr_lootspawn</code> &nbsp; <code>sr_other</code></p>
 
-### How loot multipliers work
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/icon-survival.png" width="90" alt="Survival"></p>
+<h3 align="center"><strong>Survival</strong></h3>
+<p align="center">Change stamina, Eitr, adrenaline, food, durability and carry weight related settings.</p>
+<p align="center"><code>sr_stamina</code> &nbsp; <code>sr_movestamina</code> &nbsp; <code>sr_staminaregen</code></p>
+<p align="center"><code>sr_eitr</code> &nbsp; <code>sr_adrenaline</code> &nbsp; <code>sr_food</code></p>
+<p align="center"><code>sr_durability</code> &nbsp; <code>sr_carry</code></p>
 
-The dedicated watches item drops near players. When a fresh drop has come to rest on the ground, the server asks the nearest player's game to spawn the extra items next to it (vanilla SpawnObject RPC, so they fall and land like normal drops). `LootSpawn = Server` lets the server create them itself instead. Items a player ever held or crafted are never multiplied, so dropping and picking up items cannot be abused. Drop *chance* stays vanilla, only the amount changes. `MaxExtraPiles` caps how many extra items one drop can create.
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/icon-death.png" width="90" alt="Death"></p>
+<h3 align="center"><strong>Death Settings</strong></h3>
+<p align="center">Configure equipment retention, inventory loss and skill penalties on death.</p>
+<p align="center"><code>sr_keepequip</code> &nbsp; <code>sr_keepinv</code></p>
+<p align="center"><code>sr_deleteitems</code> &nbsp; <code>sr_deleteunequipped</code></p>
+<p align="center"><code>sr_skillreset</code></p>
 
----
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/icon-building.png" width="90" alt="Building"></p>
+<h3 align="center"><strong>Building and Crafting</strong></h3>
+<p align="center">Customize building costs, crafting costs, available pieces, recipes and station restrictions.</p>
+<p align="center"><code>sr_nobuildcost</code> &nbsp; <code>sr_nocraftcost</code></p>
+<p align="center"><code>sr_allpieces</code> &nbsp; <code>sr_allrecipes</code></p>
+<p align="center"><code>sr_noworkbench</code> &nbsp; <code>sr_toollocks</code></p>
 
-## Config
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/icon-world.png" width="90" alt="World"></p>
+<h3 align="center"><strong>World and Exploration</strong></h3>
+<p align="center">Change map visibility, portal restrictions, dungeon building and world behavior.</p>
+<p align="center"><code>sr_nomap</code> &nbsp; <code>sr_noportals</code></p>
+<p align="center"><code>sr_nobossportals</code> &nbsp; <code>sr_teleportall</code></p>
+<p align="center"><code>sr_dungeonbuild</code></p>
+<p align="center"><code>sr_nopseudo</code> &nbsp; <code>sr_nobuildfall</code></p>
+<p align="center"><code>sr_noheavysnow</code> &nbsp; <code>sr_allheavysnow</code> &nbsp; <code>sr_fire</code></p>
 
-**One file:** `BepInEx/config/com.morda.serverrates.cfg`
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/icon-stations.png" width="90" alt="Stations"></p>
+<h3 align="center"><strong>Production Stations</strong></h3>
+<p align="center">Adjust processing behavior for smelters, cooking stations, fermenters and plant related systems.</p>
+<p align="center"><code>sr_smelter</code> &nbsp; <code>sr_cooking</code> &nbsp; <code>sr_fermenter</code> &nbsp; <code>sr_plants</code></p>
 
-Edit it by hand or with Valheim Server Manager: the server notices the change within about two seconds and applies it live, no restart. Chat commands write to the same file.
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/divider-gold.png" width="100%" alt=""></p>
 
----
+<h2 align="center"><strong>Loot Configuration</strong></h2>
 
-## Install
+<p align="center">Loot settings are divided into resource materials, consumables and creature drops.</p>
 
-1. Install [BepInExPack Valheim](https://thunderstore.io/c/valheim/p/denikson/BepInExPack_Valheim/) on your **Valheim dedicated server**.
-2. Drop `ServerRates.dll` into `BepInEx/plugins/ServerRates/`.
-3. Start the server once to generate `com.morda.serverrates.cfg`.
-4. Edit the config, use Valheim Server Manager, or use chat commands.
+<h3 align="center"><strong>Materials</strong></h3>
+<p align="center"><code>sr_wood</code> &nbsp; <code>sr_finewood</code> &nbsp; <code>sr_corewood</code></p>
+<p align="center"><code>sr_specialwood</code> &nbsp; <code>sr_ore</code> &nbsp; <code>sr_scrap</code></p>
+<p align="center"><code>sr_stone</code> &nbsp; <code>sr_flint</code> &nbsp; <code>sr_crystal</code></p>
+<p align="center"><code>sr_fuel</code> &nbsp; <code>sr_gems</code> &nbsp; <code>sr_boss</code></p>
 
-Clients (vanilla PC, PS5, Xbox): no install.
+<h3 align="center"><strong>Consumables</strong></h3>
+<p align="center"><code>sr_crops</code> &nbsp; <code>sr_seeds</code> &nbsp; <code>sr_mushrooms</code></p>
+<p align="center"><code>sr_berries</code> &nbsp; <code>sr_fish</code> &nbsp; <code>sr_potions</code></p>
 
----
+<h3 align="center"><strong>Creature Drops</strong></h3>
+<p align="center"><code>sr_hide</code> &nbsp; <code>sr_trophy</code> &nbsp; <code>sr_meat</code></p>
+<p align="center"><code>sr_parts</code> &nbsp; <code>sr_feathers</code> &nbsp; <code>sr_specialparts</code></p>
 
-## Limitations
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/divider-norse.png" width="100%" alt=""></p>
 
-- Per-skill XP needs a client mod. Vanilla only has a global skill rate.
-- Loot that goes straight into the inventory (some pickables) never lands on the ground and is not multiplied.
-- Station speed (`smelter`, `cooking`, `plants`, `fermenter`) is done by the server editing the stations' data, nothing is needed on the clients. `plants` and `fermenter` apply to plants planted and batches started after the change. `smelter` and `cooking` only speed things up (values below 1 are ignored) and only boost stations that are actually working (ore and fuel, fire lit). Cooked food is never pushed into burnt.
-- Existing config files keep working. The old options `SnapExtraDropsToGround` and `ExtraDropScatterForce` are no longer used.
+<h2 align="center"><strong>Chat Commands</strong></h2>
+
+<p align="center">Use the available commands in game to inspect and manage your server configuration.</p>
+
+<p align="center">Type commands in the normal chat without a slash, for example <code>sr_wood 5</code>.</p>
+
+<h3 align="center"><strong>General Commands</strong></h3>
+
+<p align="center"><strong>Help and Status</strong></p>
+<p align="center"><code>rates help</code> &nbsp; <code>rates status</code> &nbsp; <code>rates cmds</code></p>
+
+<p align="center"><strong>Configuration</strong></p>
+<p align="center"><code>rates list &lt;group&gt;</code> &nbsp; <code>rates get &lt;name&gt;</code></p>
+<p align="center"><code>rates set &lt;name&gt; &lt;value&gt;</code></p>
+
+<p align="center"><strong>Presets</strong></p>
+<p align="center"><code>rates preset vanilla</code> &nbsp; <code>rates preset x2</code></p>
+<p align="center"><code>rates preset x5</code> &nbsp; <code>rates preset x10</code></p>
+
+<p align="center"><strong>Reset and Maintenance</strong></p>
+<p align="center"><code>rates reset &lt;name|group|all&gt;</code> &nbsp; <code>rates inspect</code></p>
+<p align="center"><code>rates repair</code></p>
+
+<h3 align="center"><strong>Configuration Groups</strong></h3>
+<p align="center">Use <code>rates list &lt;group&gt;</code> to view the settings available in a group.</p>
+<p align="center"><code>loot</code> &nbsp; <code>materials</code> &nbsp; <code>consumables</code> &nbsp; <code>mobs</code></p>
+<p align="center"><code>skills</code> &nbsp; <code>combat</code> &nbsp; <code>survival</code> &nbsp; <code>resources</code></p>
+<p align="center"><code>death</code> &nbsp; <code>build</code> &nbsp; <code>map</code> &nbsp; <code>world</code></p>
+<p align="center"><code>stations</code> &nbsp; <code>general</code></p>
+
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/divider-gold.png" width="100%" alt=""></p>
+
+<h2 align="center"><strong>Command Examples</strong></h2>
+
+<p align="center"><strong>Check the current configuration</strong></p>
+<p align="center"><code>rates status</code> &nbsp; <code>rates list loot</code></p>
+
+<p align="center"><strong>Change a setting</strong></p>
+<p align="center"><code>rates set sr_wood 2</code></p>
+
+<p align="center"><strong>Apply a preset</strong></p>
+<p align="center"><code>rates preset x5</code></p>
+
+<p align="center"><strong>Reset a setting or group</strong></p>
+<p align="center"><code>rates reset sr_wood</code> &nbsp; <code>rates reset loot</code></p>
+
+<p align="center"><strong>View detailed information</strong></p>
+<p align="center"><code>rates inspect</code> &nbsp; <code>rates repair</code></p>
+
+<p align="center">The exact commands available to players may depend on your configured chat command access and prefix settings.</p>
+
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/divider-norse.png" width="100%" alt=""></p>
+
+<h2 align="center"><strong>Presets</strong></h2>
+
+<p align="center">Quickly change your server's gameplay style using the built in presets.</p>
+
+<p align="center"><code>rates preset vanilla</code></p>
+<p align="center">Return supported settings to their vanilla values.</p>
+
+<p align="center"><code>rates preset x2</code></p>
+<p align="center">Apply the supported double rate preset.</p>
+
+<p align="center"><code>rates preset x5</code></p>
+<p align="center">Apply the supported five times rate preset.</p>
+
+<p align="center"><code>rates preset x10</code></p>
+<p align="center">Apply the supported ten times rate preset.</p>
+
+<p align="center">Presets apply to supported loot, skill gain and station settings (smelter, cooking, fermenter and plants).</p>
+
+<h2 align="center"><strong>Inspection and Repair</strong></h2>
+
+<p align="center"><code>rates inspect</code></p>
+<p align="center">Displays saved configuration values and station item processing times for supported stations within inspection range.</p>
+
+<p align="center"><code>rates repair</code></p>
+<p align="center">Displays relevant configuration and station information and resets the stored smelter timer to zero.</p>
+
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/divider-gold.png" width="100%" alt=""></p>
+
+<h2 align="center"><strong>General Settings</strong></h2>
+
+<p align="center">The following keys control general ServerRates behavior.</p>
+
+<p align="center"><code>sr_enabled</code> &nbsp; Enable or disable ServerRates.</p>
+<p align="center"><code>sr_chatcmds</code> &nbsp; Enable or disable chat commands.</p>
+<p align="center"><code>sr_chataccess</code> &nbsp; Configure chat command access.</p>
+<p align="center"><code>sr_chatbridge</code> &nbsp; Configure chat command bridge behavior.</p>
+<p align="center"><code>sr_stationinfo</code> &nbsp; Configure station information output.</p>
+
+<h2 align="center"><strong>Notes and Limitations</strong></h2>
+
+<p align="center">Available settings and behavior depend on the installed ServerRates version and the underlying Valheim mechanics.</p>
+
+<p align="center">Some changes may only affect newly generated drops, newly crafted items or future processing cycles. Existing items and ongoing processes may not be recalculated automatically.</p>
+
+<p align="center">Smelter and cooking station speed can be raised above vanilla and set back to normal. Values below 1 (slower than vanilla) are ignored.</p>
+
+<p align="center">Always keep a backup of your world and configuration before making major gameplay changes.</p>
+
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/divider-norse.png" width="100%" alt=""></p>
+
+<h2 align="center"><strong>Support and Community</strong></h2>
+
+<p align="center">Found a bug, have a suggestion or need help configuring ServerRates?</p>
+
+<p align="center"><strong>Join the ServerRates Discord Community</strong></p>
+
+<p align="center"><a href="https://discord.gg/KGM8rjAfT">Join our Discord</a></p>
+
+<p align="center">Feedback and bug reports are always welcome.</p>
+
+<p align="center"><img src="https://raw.githubusercontent.com/morda0511/ServerRates/main/thunderstore-assets/server-rates/server-rates-footer.png" alt="ServerRates Footer" width="100%"></p>
+
+<p align="center"><strong>ServerRates</strong></p>
+<p align="center"><em>Your World. Your Rules. Your Rates.</em></p>
