@@ -1,73 +1,20 @@
 using System;
-using System.Text;
+using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 
 namespace ServerRates
 {
     /// <summary>
-    /// Client feedback: F5 via RemotePrint, chat once, optional yellow HUD.
-    /// Dedicated AddString alone only hits BepInEx.
+    /// Everything the server tells people:
+    ///  - private chat reply to the one who typed a command (works on console, no client mod)
+    ///  - yellow center message + one chat line for everybody when a rate changes
+    ///  - F5 / server console output
     /// </summary>
     internal static class RatesFeedback
     {
-        private static bool _guard;
-
-        /// <summary>Active while ZNet runs a remote admin command.</summary>
+        /// <summary>Set while ZNet runs a remote admin (F5) command.</summary>
         internal static ZRpc CurrentRemoteRpc { get; private set; }
-
-        public static void Say(string msg, bool yellowHud)
-        {
-            if (string.IsNullOrEmpty(msg))
-                return;
-
-            // Always log full text server-side
-            foreach (string line in SplitLines(msg))
-                Plugin.Log?.LogInfo(line);
-
-            if (_guard)
-                return;
-            _guard = true;
-            try
-            {
-                // F5 terminal on the admin client — one RemotePrint per line (reliable)
-                ZRpc rpc = CurrentRemoteRpc;
-                if (rpc != null && rpc.IsConnected() && ZNet.instance != null)
-                {
-                    foreach (string line in SplitLines(msg))
-                    {
-                        try
-                        {
-                            ZNet.instance.RemotePrint(rpc, line);
-                        }
-                        catch (Exception ex)
-                        {
-                            Plugin.Log?.LogWarning("ServerRates RemotePrint failed: " + ex.Message);
-                            break;
-                        }
-                    }
-                }
-                else if (Console.instance != null)
-                {
-                    foreach (string line in SplitLines(msg))
-                        Console.instance.Print(line);
-                }
-
-                if (yellowHud)
-                {
-                    // Center HUD: first line only
-                    string first = SplitLines(msg)[0];
-                    ShowYellowHud(first);
-                }
-
-                // Chat: entire block once (trimmed if huge)
-                BroadcastChat(TrimForChat(msg));
-            }
-            finally
-            {
-                _guard = false;
-            }
-        }
 
         private static string[] SplitLines(string msg)
         {
@@ -75,30 +22,85 @@ namespace ServerRates
                 .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
-        private static string TrimForChat(string msg)
+        /// <summary>Server console / BepInEx log / remote F5 terminal.</summary>
+        public static void Say(string msg)
         {
-            const int max = 450;
-            string compact = msg.Replace("\r\n", " | ").Replace('\n', '|').Replace('\r', '|');
-            if (compact.Length <= max)
-                return compact;
-            return compact.Substring(0, max - 3) + "...";
+            if (string.IsNullOrEmpty(msg))
+                return;
+
+            foreach (string line in SplitLines(msg))
+            {
+                Plugin.Log?.LogInfo(line);
+
+                ZRpc rpc = CurrentRemoteRpc;
+                if (rpc != null && rpc.IsConnected() && ZNet.instance != null)
+                {
+                    try
+                    {
+                        ZNet.instance.RemotePrint(rpc, line);
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log?.LogWarning("ServerRates RemotePrint failed: " + ex.Message);
+                    }
+                }
+                else if (Console.instance != null)
+                {
+                    Console.instance.Print(line);
+                }
+            }
         }
 
-        public static void ShowYellowHud(string text)
+        /// <summary>Chat message to a single player (peer uid = chat sender id).</summary>
+        public static void ReplyChat(long peer, string text, Vector3 near = default(Vector3))
+        {
+            foreach (string line in SplitLines(text ?? ""))
+                SendChat(peer, line, near);
+        }
+
+        /// <summary>One line in everybody's chat + yellow center message.</summary>
+        public static void Announce(string hud, string chatLine)
+        {
+            Plugin.Log?.LogInfo(chatLine);
+            SendHud(hud);
+            SendChat(ZRoutedRpc.Everybody, chatLine);
+        }
+
+        public static void AnnounceChanges(List<Rate> changed, string who, string label = null)
+        {
+            if (changed == null || changed.Count == 0)
+                return;
+
+            string text;
+            if (changed.Count <= 3)
+            {
+                var parts = new List<string>();
+                foreach (Rate r in changed)
+                    parts.Add(r.Label + " " + r.Display());
+                text = string.Join(" | ", parts.ToArray());
+            }
+            else if (!string.IsNullOrEmpty(label))
+            {
+                text = label + " " + changed[0].Display();
+            }
+            else
+            {
+                text = changed.Count + " rates changed";
+            }
+
+            string by = string.IsNullOrEmpty(who) ? "" : " (" + who + ")";
+            Announce(text, "[ServerRates] " + text + by);
+        }
+
+        private static void SendHud(string text)
         {
             if (string.IsNullOrEmpty(text) || ZRoutedRpc.instance == null)
                 return;
             try
             {
-                if (MessageHud.instance != null)
-                {
-                    MessageHud.instance.MessageAll(MessageHud.MessageType.Center, text);
-                    return;
-                }
-
+                // The dedicated has no MessageHud: use the routed RPC every client understands.
                 ZRoutedRpc.instance.InvokeRoutedRPC(
-                    ZRoutedRpc.Everybody,
-                    "ShowMessage",
+                    ZRoutedRpc.Everybody, "ShowMessage",
                     new object[] { (int)MessageHud.MessageType.Center, text });
             }
             catch (Exception ex)
@@ -107,24 +109,25 @@ namespace ServerRates
             }
         }
 
-        public static void BroadcastChat(string text)
+        private static void SendChat(long target, string text, Vector3 at = default(Vector3))
         {
             if (string.IsNullOrEmpty(text) || ZRoutedRpc.instance == null)
                 return;
             try
             {
-                UserInfo info = new UserInfo { Name = "ServerRates" };
+                // A valid user id keeps clients from logging "PlatformUserID failed to parse" for every reply.
+                UserInfo from = new UserInfo { Name = "ServerRates" };
+                Splatform.PlatformUserID? id = ChatBridge.ServerUser();
+                if (id.HasValue)
+                    from.UserId = id.Value;
+
                 ZRoutedRpc.instance.InvokeRoutedRPC(
-                    ZRoutedRpc.Everybody,
-                    "ChatMessage",
-                    Vector3.zero,
-                    (int)Talker.Type.Normal,
-                    info,
-                    text);
+                    target, "ChatMessage",
+                    at, (int)Talker.Type.Normal, from, text);
             }
             catch (Exception ex)
             {
-                Plugin.Log?.LogWarning("ServerRates chat broadcast failed: " + ex.Message);
+                Plugin.Log?.LogWarning("ServerRates chat failed: " + ex.Message);
             }
         }
 

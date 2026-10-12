@@ -1,306 +1,502 @@
+using System;
+using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using BepInEx.Configuration;
 
 namespace ServerRates
 {
-    public class ModConfig
+    internal enum RateKind
     {
-        public ConfigEntry<bool> Enabled { get; }
-        public ConfigEntry<bool> ChatCommandsEnabled { get; }
-        public ConfigEntry<string> ChatCommandPrefix { get; }
+        Percent,    // 100 = vanilla
+        Multiplier, // 1 = vanilla
+        Number,     // plain number
+        Toggle,     // Unchanged | On | Off
+        Switch,     // true / false
+        Choice      // one of Options
+    }
 
-        // Skills
-        public ConfigEntry<float> SkillGainPercent { get; }
-        public ConfigEntry<float> SkillReductionPercent { get; }
+    /// <summary>One tunable value: config entry + chat command + (optional) vanilla world key.</summary>
+    internal sealed class Rate
+    {
+        public string Short;
+        public string Key;
+        public string Section;
+        public string Group;
+        public string Label;
+        public string Description;
+        public RateKind Kind;
+        public GlobalKeys? GlobalKey;
+        public DropClassifier.Kind? Drop;
 
-        // Combat / world
-        public ConfigEntry<float> PlayerDamagePercent { get; }
-        public ConfigEntry<float> EnemyDamagePercent { get; }
-        public ConfigEntry<float> EnemySpeedSizePercent { get; }
-        public ConfigEntry<float> EnemyLevelUpPercent { get; }
-        public ConfigEntry<float> EventRatePercent { get; }
-        public ConfigEntry<int> WorldLevel { get; }
-        public ConfigEntry<string> PassiveMobs { get; }
-        public ConfigEntry<string> PlayerEvents { get; }
+        public float Min;
+        public float Max = 10000f;
+        public bool Integer;
+        public float DefaultValue;
+        public bool DefaultFlag;
+        public string DefaultText = "Unchanged";
+        public string[] Options;
 
-        // Survival
-        public ConfigEntry<float> StaminaPercent { get; }
-        public ConfigEntry<float> MoveStaminaPercent { get; }
-        public ConfigEntry<float> StaminaRegenPercent { get; }
-        public ConfigEntry<float> EitrPercent { get; }
-        public ConfigEntry<float> AdrenalinePercent { get; }
-        public ConfigEntry<float> FoodPercent { get; }
-        public ConfigEntry<float> DurabilityPercent { get; }
-        public ConfigEntry<float> CarryWeightPercent { get; }
+        private ConfigEntry<float> _num;
+        private ConfigEntry<string> _text;
+        private ConfigEntry<bool> _flag;
 
-        // Global resources
-        public ConfigEntry<float> ResourceRatePercent { get; }
-
-        // Loot amp master
-        public ConfigEntry<bool> CategoryGroundAmp { get; }
-        public ConfigEntry<bool> SnapExtraDropsToGround { get; }
-        public ConfigEntry<float> ExtraDropScatterForce { get; }
-        public ConfigEntry<float> OtherDropMultiplier { get; }
-
-        // 6a Materials
-        public ConfigEntry<float> WoodDropMultiplier { get; }
-        public ConfigEntry<float> FineWoodDropMultiplier { get; }
-        public ConfigEntry<float> CoreWoodDropMultiplier { get; }
-        public ConfigEntry<float> SpecialWoodDropMultiplier { get; }
-        public ConfigEntry<float> OreDropMultiplier { get; }
-        public ConfigEntry<float> ScrapDropMultiplier { get; }
-        public ConfigEntry<float> StoneDropMultiplier { get; }
-        public ConfigEntry<float> FlintDropMultiplier { get; }
-        public ConfigEntry<float> CrystalDropMultiplier { get; }
-        public ConfigEntry<float> FuelDropMultiplier { get; }
-        public ConfigEntry<float> GemDropMultiplier { get; }
-        public ConfigEntry<float> BossDropMultiplier { get; }
-
-        // 6b Consumables
-        public ConfigEntry<float> CropDropMultiplier { get; }
-        public ConfigEntry<float> SeedDropMultiplier { get; }
-        public ConfigEntry<float> MushroomDropMultiplier { get; }
-        public ConfigEntry<float> BerryHoneyDropMultiplier { get; }
-        public ConfigEntry<float> FishDropMultiplier { get; }
-        public ConfigEntry<float> PotionDropMultiplier { get; }
-
-        // 6c Mob drops
-        public ConfigEntry<float> HideDropMultiplier { get; }
-        public ConfigEntry<float> TrophyDropMultiplier { get; }
-        public ConfigEntry<float> MeatDropMultiplier { get; }
-        public ConfigEntry<float> PartsDropMultiplier { get; }
-        public ConfigEntry<float> FeatherDropMultiplier { get; }
-        public ConfigEntry<float> SpecialPartsDropMultiplier { get; }
-
-        // Death
-        public ConfigEntry<string> DeathKeepEquip { get; }
-        public ConfigEntry<string> DeathKeepInventory { get; }
-        public ConfigEntry<string> DeathDeleteItems { get; }
-        public ConfigEntry<string> DeathDeleteUnequipped { get; }
-        public ConfigEntry<string> DeathSkillsReset { get; }
-
-        // Build / craft
-        public ConfigEntry<string> NoBuildCost { get; }
-        public ConfigEntry<string> NoCraftCost { get; }
-        public ConfigEntry<string> AllPiecesUnlocked { get; }
-        public ConfigEntry<string> AllRecipesUnlocked { get; }
-        public ConfigEntry<string> NoWorkbench { get; }
-        public ConfigEntry<string> WorldLevelLockedTools { get; }
-
-        // Map / portals
-        public ConfigEntry<string> NoMap { get; }
-        public ConfigEntry<string> NoPortals { get; }
-        public ConfigEntry<string> NoBossPortals { get; }
-        public ConfigEntry<string> TeleportAll { get; }
-        public ConfigEntry<string> DungeonBuild { get; }
-
-        // World flags
-        public ConfigEntry<string> NoPseudoDrops { get; }
-        public ConfigEntry<string> NoBuildingFall { get; }
-        public ConfigEntry<string> NoHeavySnow { get; }
-        public ConfigEntry<string> AllHeavySnow { get; }
-        public ConfigEntry<string> Fire { get; }
-
-        // Stations / plants (higher = faster)
-        public ConfigEntry<float> SmelterSpeedMultiplier { get; }
-        public ConfigEntry<float> FermenterSpeedMultiplier { get; }
-        public ConfigEntry<float> CookingSpeedMultiplier { get; }
-        public ConfigEntry<float> PlantGrowSpeedMultiplier { get; }
-
-        private static readonly AcceptableValueList<string> ToggleValues =
-            new AcceptableValueList<string>("Unchanged", "On", "Off");
-
-        public ModConfig(ConfigFile file)
+        public bool IsNumeric
         {
-            Enabled = file.Bind("1 - General", "Enabled", true,
-                "Master switch. Dedicated server only; vanilla clients need no install.");
-            ChatCommandsEnabled = file.Bind("1 - General", "ChatCommandsEnabled", true,
-                "Allow rate commands in chat (for console players). No admin check — anyone can use. Prefix below.");
-            ChatCommandPrefix = file.Bind("1 - General", "ChatCommandPrefix", "/",
-                "Chat prefix for console/PC chat commands, e.g. /sr_wood 9 or /rates status");
-
-            SkillGainPercent = Percent(file, "2 - Skills", "SkillGainPercent", 100f,
-                "XP for ALL skills. 100 = vanilla, 200 = x2, 1000 = x10.");
-            SkillReductionPercent = Percent(file, "2 - Skills", "SkillReductionPercent", 100f,
-                "Skill loss on death. 100 = vanilla, 0 = none.");
-
-            PlayerDamagePercent = Percent(file, "3 - Combat", "PlayerDamagePercent", 100f,
-                "Damage players deal. 100 = vanilla.");
-            EnemyDamagePercent = Percent(file, "3 - Combat", "EnemyDamagePercent", 100f,
-                "Damage enemies deal. 100 = vanilla.");
-            EnemySpeedSizePercent = Percent(file, "3 - Combat", "EnemySpeedSizePercent", 100f,
-                "Enemy move speed / size scaling. 100 = vanilla.");
-            EnemyLevelUpPercent = Percent(file, "3 - Combat", "EnemyLevelUpPercent", 100f,
-                "How fast enemies star-up. 100 = vanilla.");
-            EventRatePercent = Percent(file, "3 - Combat", "EventRatePercent", 100f,
-                "Raid / event frequency. 100 = vanilla, 0 = none.");
-            WorldLevel = file.Bind("3 - Combat", "WorldLevel", 0,
-                new ConfigDescription("World level 0-10. 0 = vanilla start.", new AcceptableValueRange<int>(0, 10)));
-            PassiveMobs = Toggle(file, "3 - Combat", "PassiveMobs",
-                "On = mobs do not attack. Unchanged = leave vanilla/world setting.");
-            PlayerEvents = Toggle(file, "3 - Combat", "PlayerEvents",
-                "Player-based raid events.");
-
-            StaminaPercent = Percent(file, "4 - Survival", "StaminaPercent", 100f,
-                "Stamina drain. Lower = less drain. 100 = vanilla.");
-            MoveStaminaPercent = Percent(file, "4 - Survival", "MoveStaminaPercent", 100f,
-                "Movement stamina drain. 100 = vanilla.");
-            StaminaRegenPercent = Percent(file, "4 - Survival", "StaminaRegenPercent", 100f,
-                "Stamina regen. Higher = faster. 100 = vanilla.");
-            EitrPercent = Percent(file, "4 - Survival", "EitrPercent", 100f, "Eitr rate. 100 = vanilla.");
-            AdrenalinePercent = Percent(file, "4 - Survival", "AdrenalinePercent", 100f, "Adrenaline rate. 100 = vanilla.");
-            FoodPercent = Percent(file, "4 - Survival", "FoodPercent", 100f,
-                "Food duration scaling. 100 = vanilla.");
-            DurabilityPercent = Percent(file, "4 - Survival", "DurabilityPercent", 100f,
-                "Tool/weapon durability loss. Lower = lasts longer. 100 = vanilla.");
-            CarryWeightPercent = Percent(file, "4 - Survival", "CarryWeightPercent", 100f,
-                "Carry weight. 200 = x2 capacity. 100 = vanilla.");
-
-            ResourceRatePercent = Percent(file, "5 - Resources", "ResourceRatePercent", 100f,
-                "GLOBAL drop rate (vanilla World Modifier ResourceRate). 100 = vanilla, 200 = x2. Synced to all clients.");
-
-            CategoryGroundAmp = file.Bind("6 - Loot", "CategoryGroundAmp", true,
-                "Server amplifies categorized ground loot after it spawns (vanilla/PS5 clients OK). Player-thrown items are skipped.");
-            SnapExtraDropsToGround = file.Bind("6 - Loot", "SnapExtraDropsToGround", true,
-                "Place amplified extra piles on the ground (fixes floating server extras).");
-            ExtraDropScatterForce = file.Bind("6 - Loot", "ExtraDropScatterForce", 4f,
-                new ConfigDescription("Physics push on extra piles (vanilla mob loot uses ~5). 0 = no push.", new AcceptableValueRange<float>(0f, 20f)));
-            OtherDropMultiplier = Mult(file, "6 - Loot", "OtherDropMultiplier", LegacyFloat(file, "OtherDropMultiplier", 1f),
-                "Anything not matched below. Keep at 1 unless you want everything amplified.");
-
-            float woodLegacy = LegacyFloat(file, "WoodDropMultiplier", 1f);
-            WoodDropMultiplier = Mult(file, "6a - Materials", "WoodDropMultiplier", woodLegacy, "Basic wood.");
-            FineWoodDropMultiplier = Mult(file, "6a - Materials", "FineWoodDropMultiplier", woodLegacy, "Fine wood.");
-            CoreWoodDropMultiplier = Mult(file, "6a - Materials", "CoreWoodDropMultiplier", woodLegacy, "Core wood (RoundLog).");
-            SpecialWoodDropMultiplier = Mult(file, "6a - Materials", "SpecialWoodDropMultiplier", woodLegacy,
-                "Elder bark, Yggdrasil, Ash, Black wood.");
-            float oreLegacy = LegacyFloat(file, "OreDropMultiplier", 1f);
-            OreDropMultiplier = Mult(file, "6a - Materials", "OreDropMultiplier", oreLegacy, "Raw ores.");
-            ScrapDropMultiplier = Mult(file, "6a - Materials", "ScrapDropMultiplier", oreLegacy, "Iron/black metal/copper scrap.");
-            float stoneLegacy = LegacyFloat(file, "StoneDropMultiplier", 1f);
-            StoneDropMultiplier = Mult(file, "6a - Materials", "StoneDropMultiplier", stoneLegacy, "Stone and similar.");
-            FlintDropMultiplier = Mult(file, "6a - Materials", "FlintDropMultiplier", stoneLegacy, "Flint.");
-            CrystalDropMultiplier = Mult(file, "6a - Materials", "CrystalDropMultiplier", stoneLegacy, "Crystal, obsidian.");
-            FuelDropMultiplier = Mult(file, "6a - Materials", "FuelDropMultiplier", LegacyFloat(file, "FuelDropMultiplier", 1f),
-                "Coal, resin, tar.");
-            GemDropMultiplier = Mult(file, "6a - Materials", "GemDropMultiplier", LegacyFloat(file, "GemDropMultiplier", 1f),
-                "Coins, amber, rubies, necklace.");
-            BossDropMultiplier = Mult(file, "6a - Materials", "BossDropMultiplier", LegacyFloat(file, "BossDropMultiplier", 1f),
-                "Boss materials and boss trophies.");
-
-            float cropLegacy = LegacyFloat(file, "CropDropMultiplier", 1f);
-            CropDropMultiplier = Mult(file, "6b - Consumables", "CropDropMultiplier", cropLegacy,
-                "Crops / plants when they spawn as ground ItemDrops.");
-            SeedDropMultiplier = Mult(file, "6b - Consumables", "SeedDropMultiplier", cropLegacy, "Seeds and cones.");
-            MushroomDropMultiplier = Mult(file, "6b - Consumables", "MushroomDropMultiplier", 1f, "Mushrooms / magecap.");
-            BerryHoneyDropMultiplier = Mult(file, "6b - Consumables", "BerryHoneyDropMultiplier", 1f, "Berries, honey.");
-            FishDropMultiplier = Mult(file, "6b - Consumables", "FishDropMultiplier", 1f, "Fish and similar.");
-            PotionDropMultiplier = Mult(file, "6b - Consumables", "PotionDropMultiplier", 1f, "Meads / potions if they land as ground loot.");
-
-            HideDropMultiplier = Mult(file, "6c - Mob Drops", "HideDropMultiplier", LegacyFloat(file, "HideDropMultiplier", 1f),
-                "Hides, leather, pelts, scales.");
-            TrophyDropMultiplier = Mult(file, "6c - Mob Drops", "TrophyDropMultiplier", 1f, "Normal mob trophies.");
-            MeatDropMultiplier = Mult(file, "6c - Mob Drops", "MeatDropMultiplier", 1f, "Raw / cooked meat drops.");
-            PartsDropMultiplier = Mult(file, "6c - Mob Drops", "PartsDropMultiplier", LegacyFloat(file, "PartsDropMultiplier", 1f),
-                "Bones, entrails, eyes, glands, fangs.");
-            FeatherDropMultiplier = Mult(file, "6c - Mob Drops", "FeatherDropMultiplier", 1f, "Feathers.");
-            SpecialPartsDropMultiplier = Mult(file, "6c - Mob Drops", "SpecialPartsDropMultiplier", 1f,
-                "Guck, ooze, soft tissue, carapace, bile, …");
-
-            DeathKeepEquip = Toggle(file, "7 - Death", "DeathKeepEquip", "Keep equipped gear on death.");
-            DeathKeepInventory = Toggle(file, "7 - Death", "DeathKeepInventory", "Keep full inventory on death.");
-            DeathDeleteItems = Toggle(file, "7 - Death", "DeathDeleteItems", "Delete items on death.");
-            DeathDeleteUnequipped = Toggle(file, "7 - Death", "DeathDeleteUnequipped", "Delete unequipped items on death.");
-            DeathSkillsReset = Toggle(file, "7 - Death", "DeathSkillsReset", "Reset skills on death.");
-
-            NoBuildCost = Toggle(file, "8 - Build Craft", "NoBuildCost", "Building costs nothing.");
-            NoCraftCost = Toggle(file, "8 - Build Craft", "NoCraftCost", "Crafting costs nothing.");
-            AllPiecesUnlocked = Toggle(file, "8 - Build Craft", "AllPiecesUnlocked", "All build pieces unlocked.");
-            AllRecipesUnlocked = Toggle(file, "8 - Build Craft", "AllRecipesUnlocked", "All recipes unlocked.");
-            NoWorkbench = Toggle(file, "8 - Build Craft", "NoWorkbench", "No workbench range required.");
-            WorldLevelLockedTools = Toggle(file, "8 - Build Craft", "WorldLevelLockedTools", "World-level tool locks.");
-
-            NoMap = Toggle(file, "9 - Map Portals", "NoMap", "Disable map.");
-            NoPortals = Toggle(file, "9 - Map Portals", "NoPortals", "Disable portals.");
-            NoBossPortals = Toggle(file, "9 - Map Portals", "NoBossPortals", "Disable boss portals.");
-            TeleportAll = Toggle(file, "9 - Map Portals", "TeleportAll", "Teleport with ores/metals.");
-            DungeonBuild = Toggle(file, "9 - Map Portals", "DungeonBuild", "Allow building in dungeons.");
-
-            NoPseudoDrops = Toggle(file, "10 - World Flags", "NoPseudoDrops", "Disable pseudo drops.");
-            NoBuildingFall = Toggle(file, "10 - World Flags", "NoBuildingFall", "Buildings do not fall.");
-            NoHeavySnow = Toggle(file, "10 - World Flags", "NoHeavySnow", "No heavy snow.");
-            AllHeavySnow = Toggle(file, "10 - World Flags", "AllHeavySnow", "Force heavy snow rules.");
-            Fire = Toggle(file, "10 - World Flags", "Fire", "Fire-related world flag.");
-
-            SmelterSpeedMultiplier = Mult(file, "11 - Stations", "SmelterSpeedMultiplier", 1f,
-                "Smelter / kiln / similar. 2 = twice as fast.");
-            FermenterSpeedMultiplier = Mult(file, "11 - Stations", "FermenterSpeedMultiplier", 1f,
-                "Fermenter speed. 2 = twice as fast.");
-            CookingSpeedMultiplier = Mult(file, "11 - Stations", "CookingSpeedMultiplier", 1f,
-                "Cooking station speed. 2 = twice as fast.");
-            PlantGrowSpeedMultiplier = Mult(file, "11 - Stations", "PlantGrowSpeedMultiplier", 1f,
-                "Plant grow speed. 2 = twice as fast (half grow time).");
+            get { return Kind == RateKind.Percent || Kind == RateKind.Multiplier || Kind == RateKind.Number; }
         }
 
-        private static ConfigEntry<float> Percent(ConfigFile file, string section, string key, float def, string desc)
-        {
-            return file.Bind(section, key, def, new ConfigDescription(desc, new AcceptableValueRange<float>(0f, 10000f)));
-        }
+        public float Value { get { return _num != null ? _num.Value : 0f; } }
+        public bool Flag { get { return _flag != null && _flag.Value; } }
+        public string Text { get { return _text != null ? _text.Value : ""; } }
 
-        private static ConfigEntry<float> Mult(ConfigFile file, string section, string key, float def, string desc)
+        internal void Bind(ConfigFile file)
         {
-            return file.Bind(section, key, def, new ConfigDescription(desc + " 1 = vanilla.", new AcceptableValueRange<float>(0f, 100f)));
-        }
-
-        /// <summary>Read orphaned values from the old "6 - Drop Categories" section if present.</summary>
-        private static float LegacyFloat(ConfigFile file, string key, float fallback)
-        {
-            try
+            switch (Kind)
             {
-                string path = file.ConfigFilePath;
-                if (string.IsNullOrEmpty(path) || !File.Exists(path))
-                    return fallback;
+                case RateKind.Percent:
+                case RateKind.Multiplier:
+                case RateKind.Number:
+                    string hint = Kind == RateKind.Percent ? " 100 = vanilla."
+                        : Kind == RateKind.Multiplier ? " 1 = vanilla." : "";
+                    _num = file.Bind(Section, Key, DefaultValue,
+                        new ConfigDescription(Description + hint, new AcceptableValueRange<float>(Min, Max)));
+                    break;
+                case RateKind.Switch:
+                    _flag = file.Bind(Section, Key, DefaultFlag, Description);
+                    break;
+                case RateKind.Toggle:
+                    Options = new[] { "Unchanged", "On", "Off" };
+                    _text = file.Bind(Section, Key, "Unchanged",
+                        new ConfigDescription(Description + " Values: Unchanged | On | Off",
+                            new AcceptableValueList<string>(Options)));
+                    break;
+                default:
+                    _text = file.Bind(Section, Key, DefaultText,
+                        new ConfigDescription(Description + " Values: " + string.Join(" | ", Options),
+                            new AcceptableValueList<string>(Options)));
+                    break;
+            }
+        }
 
-                string section = null;
-                foreach (string line in File.ReadAllLines(path))
+        public static string Fmt(float v)
+        {
+            return v.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+
+        public string Display()
+        {
+            switch (Kind)
+            {
+                case RateKind.Percent: return Fmt(Value) + "%";
+                case RateKind.Multiplier: return "x" + Fmt(Value);
+                case RateKind.Number: return Fmt(Value);
+                case RateKind.Switch: return Flag ? "On" : "Off";
+                default: return Text;
+            }
+        }
+
+        public bool IsDefault()
+        {
+            switch (Kind)
+            {
+                case RateKind.Switch: return Flag == DefaultFlag;
+                case RateKind.Toggle:
+                case RateKind.Choice: return string.Equals(Text, DefaultText, StringComparison.OrdinalIgnoreCase);
+                default: return Math.Abs(Value - DefaultValue) < 0.0001f;
+            }
+        }
+
+        public void Reset()
+        {
+            switch (Kind)
+            {
+                case RateKind.Switch: _flag.Value = DefaultFlag; break;
+                case RateKind.Toggle:
+                case RateKind.Choice: _text.Value = DefaultText; break;
+                default: _num.Value = DefaultValue; break;
+            }
+        }
+
+        public string RangeHint()
+        {
+            switch (Kind)
+            {
+                case RateKind.Switch: return "on/off";
+                case RateKind.Toggle: return "on/off/unchanged";
+                case RateKind.Choice: return string.Join("/", Options).ToLowerInvariant();
+                default: return Fmt(Min) + " - " + Fmt(Max);
+            }
+        }
+
+        public bool TrySet(string raw, out string error)
+        {
+            error = null;
+            string s = (raw ?? "").Trim().ToLowerInvariant();
+
+            if (IsNumeric)
+            {
+                s = s.TrimStart('x', '*').TrimEnd('x', '%').Replace(',', '.');
+                if (!float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float v))
                 {
-                    string t = line.Trim();
-                    if (t.Length == 0 || t.StartsWith("#"))
-                        continue;
-                    if (t.StartsWith("[") && t.EndsWith("]"))
-                    {
-                        section = t.Substring(1, t.Length - 2);
-                        continue;
-                    }
-                    if (section != "6 - Drop Categories")
-                        continue;
-                    int eq = t.IndexOf('=');
-                    if (eq <= 0)
-                        continue;
-                    string k = t.Substring(0, eq).Trim();
-                    if (!string.Equals(k, key, System.StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    string raw = t.Substring(eq + 1).Trim();
-                    int hash = raw.IndexOf('#');
-                    if (hash >= 0)
-                        raw = raw.Substring(0, hash).Trim();
-                    if (float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out float v))
-                        return v;
+                    error = Short + ": number expected (" + RangeHint() + ")";
+                    return false;
+                }
+                if (Integer)
+                    v = (float)Math.Round(v);
+                if (v < Min || v > Max)
+                {
+                    error = Short + ": allowed " + RangeHint();
+                    return false;
+                }
+                _num.Value = v;
+                return true;
+            }
+
+            bool on = s == "on" || s == "true" || s == "yes" || s == "1";
+            bool off = s == "off" || s == "false" || s == "no" || s == "0";
+
+            if (Kind == RateKind.Switch)
+            {
+                if (!on && !off)
+                {
+                    error = Short + ": use on or off";
+                    return false;
+                }
+                _flag.Value = on;
+                return true;
+            }
+
+            if (Kind == RateKind.Toggle)
+            {
+                if (on) { _text.Value = "On"; return true; }
+                if (off) { _text.Value = "Off"; return true; }
+                if (s == "unchanged" || s == "default" || s == "-")
+                {
+                    _text.Value = "Unchanged";
+                    return true;
+                }
+                error = Short + ": use on, off or unchanged";
+                return false;
+            }
+
+            foreach (string opt in Options)
+            {
+                if (string.Equals(opt, s, StringComparison.OrdinalIgnoreCase))
+                {
+                    _text.Value = opt;
+                    return true;
                 }
             }
-            catch
-            {
-                // ignore — fall back to default
-            }
+            error = Short + ": use " + RangeHint();
+            return false;
+        }
+    }
 
-            return fallback;
+    /// <summary>Every rate in one table. Config, chat commands, applier and help are generated from it.</summary>
+    internal static class Rates
+    {
+        public static readonly List<Rate> All = new List<Rate>();
+        private static readonly Dictionary<string, Rate> ByShort = new Dictionary<string, Rate>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, Rate> ByKey = new Dictionary<string, Rate>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<DropClassifier.Kind, Rate> ByDrop = new Dictionary<DropClassifier.Kind, Rate>();
+
+        /// <summary>Chat group → real groups it expands to.</summary>
+        public static readonly Dictionary<string, string[]> Groups = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "general", new[] { "general" } },
+            { "skills", new[] { "skills" } },
+            { "combat", new[] { "combat" } },
+            { "survival", new[] { "survival" } },
+            { "resources", new[] { "resources" } },
+            { "loot", new[] { "materials", "consumables", "mobs" } },
+            { "materials", new[] { "materials" } },
+            { "consumables", new[] { "consumables" } },
+            { "mobs", new[] { "mobs" } },
+            { "death", new[] { "death" } },
+            { "build", new[] { "build" } },
+            { "map", new[] { "map" } },
+            { "world", new[] { "world" } },
+            { "stations", new[] { "stations" } },
+        };
+
+        public static Rate Enabled, ChatEnabled, ChatAccess, ChatBridge, StationInfo, GroundAmp, MaxPiles, LootSpawn;
+        public static Rate Smelter, Fermenter, Cooking, Plants;
+
+        private static ConfigFile _file;
+        private static Dictionary<string, string> _applied = new Dictionary<string, string>();
+
+        public static bool Ready { get { return Plugin.Active && Enabled != null && Enabled.Flag; } }
+
+        public static Rate Find(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return null;
+            Rate r;
+            if (ByShort.TryGetValue(name, out r))
+                return r;
+            return ByKey.TryGetValue(name, out r) ? r : null;
         }
 
-        private static ConfigEntry<string> Toggle(ConfigFile file, string section, string key, string desc)
+        public static float DropMultiplier(DropClassifier.Kind kind)
         {
-            return file.Bind(section, key, "Unchanged",
-                new ConfigDescription(desc + " Values: Unchanged | On | Off", ToggleValues));
+            Rate r;
+            return ByDrop.TryGetValue(kind, out r) ? r.Value : 1f;
+        }
+
+        public static List<Rate> InGroup(string group)
+        {
+            var list = new List<Rate>();
+            string[] parts;
+            if (!Groups.TryGetValue(group, out parts))
+                return list;
+            foreach (Rate r in All)
+                if (Array.IndexOf(parts, r.Group) >= 0)
+                    list.Add(r);
+            return list;
+        }
+
+        public static void Save()
+        {
+            if (_file != null)
+                _file.Save();
+        }
+
+        public static Dictionary<string, string> Snapshot()
+        {
+            var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (Rate r in All)
+                d[r.Short] = r.Display();
+            return d;
+        }
+
+        /// <summary>Rates whose value differs from the last time this was called.</summary>
+        public static List<Rate> TakeChanges()
+        {
+            var now = Snapshot();
+            var changed = new List<Rate>();
+            foreach (Rate r in All)
+            {
+                string old;
+                if (!_applied.TryGetValue(r.Short, out old) || old != now[r.Short])
+                    changed.Add(r);
+            }
+            _applied = now;
+            return changed;
+        }
+
+        public static void Init(ConfigFile file)
+        {
+            _file = file;
+            file.SaveOnConfigSet = false;
+
+            const string G = "1 - General", SK = "2 - Skills", CB = "3 - Combat", SV = "4 - Survival",
+                RS = "5 - Resources", LT = "6 - Loot", MT = "6a - Materials", CS = "6b - Consumables",
+                MB = "6c - Mob Drops", DT = "7 - Death", BC = "8 - Build Craft", MP = "9 - Map Portals",
+                WF = "10 - World Flags", ST = "11 - Stations";
+
+            // General
+            Enabled = Sw("enabled", "Enabled", G, "general", "ServerRates", true,
+                "Master switch. Dedicated server only; vanilla clients need no install.");
+            ChatEnabled = Sw("chatcmds", "ChatCommandsEnabled", G, "general", "Chat commands", true,
+                "Allow rate commands in chat (sr_wood 9 / rates status). Console players type WITHOUT a slash.");
+            ChatAccess = Ch("chataccess", "ChatAccess", G, "general", "Chat access", "Everyone",
+                new[] { "Everyone", "AdminOnly" },
+                "Who may CHANGE rates in chat. Everyone = no adminlist needed (console players). "
+                + "AdminOnly = sender must be in the server adminlist. Reading values is always allowed.");
+            ChatBridge = Sw("chatbridge", "ChatBridge", G, "general", "Chat bridge", true,
+                "Lists the server as a pseudo player so that clients send their chat to it. Needed for chat commands: "
+                + "without it the server never sees chat while only one player is online.");
+            StationInfo = Sw("stationinfo", "StationInfo", G, "general", "Station info", true,
+                "Shows a short message (top left) with the time per item when you stand next to a smelter, kiln, cooking station or fermenter. Turn off with sr_stationinfo off.");
+
+            // Skills
+            Pct("skillgain", "SkillGainPercent", SK, "skills", "Skill Gain", GlobalKeys.SkillGainRate,
+                "XP for ALL skills. 200 = x2, 1000 = x10.");
+            Pct("skillloss", "SkillReductionPercent", SK, "skills", "Skill Loss", GlobalKeys.SkillReductionRate,
+                "Skill loss on death. 0 = none.");
+
+            // Combat
+            Pct("playerdmg", "PlayerDamagePercent", CB, "combat", "Player Damage", GlobalKeys.PlayerDamage, "Damage players deal.");
+            Pct("enemydmg", "EnemyDamagePercent", CB, "combat", "Enemy Damage", GlobalKeys.EnemyDamage, "Damage enemies deal.");
+            Pct("enemyspeed", "EnemySpeedSizePercent", CB, "combat", "Enemy Speed", GlobalKeys.EnemySpeedSize, "Enemy move speed / size.");
+            Pct("enemystars", "EnemyLevelUpPercent", CB, "combat", "Enemy Stars", GlobalKeys.EnemyLevelUpRate, "How fast enemies star-up.");
+            Pct("events", "EventRatePercent", CB, "combat", "Raid Rate", GlobalKeys.EventRate, "Raid / event frequency. 0 = none.");
+            Add(new Rate
+            {
+                Short = "worldlevel", Key = "WorldLevel", Section = CB, Group = "combat", Label = "World Level",
+                Kind = RateKind.Number, Min = 0, Max = 10, Integer = true, DefaultValue = 0,
+                GlobalKey = GlobalKeys.WorldLevel, Description = "World level 0-10. 0 = vanilla start."
+            });
+            Tg("passivemobs", "PassiveMobs", CB, "combat", "Passive Mobs", GlobalKeys.PassiveMobs, "On = mobs do not attack.");
+            Tg("playerevents", "PlayerEvents", CB, "combat", "Player Events", GlobalKeys.PlayerEvents, "Player-based raid events.");
+
+            // Survival
+            Pct("stamina", "StaminaPercent", SV, "survival", "Stamina", GlobalKeys.StaminaRate, "Stamina drain. Lower = less drain.");
+            Pct("movestamina", "MoveStaminaPercent", SV, "survival", "Move Stamina", GlobalKeys.MoveStaminaRate, "Movement stamina drain.");
+            Pct("staminaregen", "StaminaRegenPercent", SV, "survival", "Stamina Regen", GlobalKeys.StaminaRegenRate, "Stamina regen. Higher = faster.");
+            Pct("eitr", "EitrPercent", SV, "survival", "Eitr", GlobalKeys.EitrRate, "Eitr rate.");
+            Pct("adrenaline", "AdrenalinePercent", SV, "survival", "Adrenaline", GlobalKeys.AdrenalineRate, "Adrenaline rate.");
+            Pct("food", "FoodPercent", SV, "survival", "Food Duration", GlobalKeys.FoodRate, "Food duration scaling.");
+            Pct("durability", "DurabilityPercent", SV, "survival", "Durability", GlobalKeys.DurabilityRate,
+                "Tool/weapon durability loss. Lower = lasts longer.");
+            Pct("carry", "CarryWeightPercent", SV, "survival", "Carry Weight", GlobalKeys.CarryWeightRate, "Carry weight. 200 = x2 capacity.");
+
+            // Resources / loot master
+            Pct("resourcerate", "ResourceRatePercent", RS, "resources", "Resource Rate", GlobalKeys.ResourceRate,
+                "GLOBAL drop rate (vanilla world modifier ResourceRate). Synced to all clients. Category multipliers stack on top.");
+            GroundAmp = Sw("groundamp", "CategoryGroundAmp", LT, "resources", "Ground Amp", true,
+                "Server multiplies categorized ground loot after it dropped (works for vanilla/PS5/Xbox clients). Player-dropped items are skipped.");
+            MaxPiles = new Rate
+            {
+                Short = "maxpiles", Key = "MaxExtraPiles", Section = LT, Group = "resources", Label = "Max Piles",
+                Kind = RateKind.Number, Min = 1, Max = 200, Integer = true, DefaultValue = 20,
+                Description = "Safety cap: max extra items (LootSpawn=Client) or piles (LootSpawn=Server) created per single drop."
+            };
+            Add(MaxPiles);
+            LootSpawn = Ch("lootspawn", "LootSpawn", LT, "resources", "Loot spawn", "Client",
+                new[] { "Client", "Server" },
+                "How extra loot is created. Client = the server asks the nearest player's game to spawn it "
+                + "(real ground and physics, recommended). Server = the server creates the item objects itself.");
+            Drp("other", "OtherDropMultiplier", LT, "resources", "Other Loot", DropClassifier.Kind.Other,
+                "Anything not matched below. Keep at 1 unless you want everything amplified.");
+
+            // Materials
+            Drp("wood", "WoodDropMultiplier", MT, "materials", "Wood", DropClassifier.Kind.Wood, "Basic wood.");
+            Drp("finewood", "FineWoodDropMultiplier", MT, "materials", "Fine Wood", DropClassifier.Kind.FineWood, "Fine wood.");
+            Drp("corewood", "CoreWoodDropMultiplier", MT, "materials", "Core Wood", DropClassifier.Kind.CoreWood, "Core wood (RoundLog).");
+            Drp("specialwood", "SpecialWoodDropMultiplier", MT, "materials", "Special Wood", DropClassifier.Kind.SpecialWood,
+                "Elder bark, Yggdrasil, Ash, Black wood.");
+            Drp("ore", "OreDropMultiplier", MT, "materials", "Ore", DropClassifier.Kind.Ore, "Raw ores.");
+            Drp("scrap", "ScrapDropMultiplier", MT, "materials", "Scrap", DropClassifier.Kind.Scrap, "Iron/black metal/copper scrap.");
+            Drp("stone", "StoneDropMultiplier", MT, "materials", "Stone", DropClassifier.Kind.Stone, "Stone and similar.");
+            Drp("flint", "FlintDropMultiplier", MT, "materials", "Flint", DropClassifier.Kind.Flint, "Flint.");
+            Drp("crystal", "CrystalDropMultiplier", MT, "materials", "Crystal", DropClassifier.Kind.Crystal, "Crystal, obsidian.");
+            Drp("fuel", "FuelDropMultiplier", MT, "materials", "Fuel", DropClassifier.Kind.Fuel, "Coal, resin, tar.");
+            Drp("gems", "GemDropMultiplier", MT, "materials", "Gems", DropClassifier.Kind.Gems, "Coins, amber, rubies, necklace.");
+            Drp("boss", "BossDropMultiplier", MT, "materials", "Boss Mats", DropClassifier.Kind.BossMats, "Boss materials and boss trophies.");
+
+            // Consumables
+            Drp("crops", "CropDropMultiplier", CS, "consumables", "Crops", DropClassifier.Kind.Crops, "Crops / plants that spawn as ground items.");
+            Drp("seeds", "SeedDropMultiplier", CS, "consumables", "Seeds", DropClassifier.Kind.Seeds, "Seeds and cones.");
+            Drp("mushrooms", "MushroomDropMultiplier", CS, "consumables", "Mushrooms", DropClassifier.Kind.Mushrooms, "Mushrooms / magecap.");
+            Drp("berries", "BerryHoneyDropMultiplier", CS, "consumables", "Berries", DropClassifier.Kind.BerriesHoney, "Berries, honey.");
+            Drp("fish", "FishDropMultiplier", CS, "consumables", "Fish", DropClassifier.Kind.Fish, "Fish and similar.");
+            Drp("potions", "PotionDropMultiplier", CS, "consumables", "Potions", DropClassifier.Kind.Potions, "Meads / potions on the ground.");
+
+            // Mob drops
+            Drp("hide", "HideDropMultiplier", MB, "mobs", "Hide", DropClassifier.Kind.Hide, "Hides, leather, pelts, scales.");
+            Drp("trophy", "TrophyDropMultiplier", MB, "mobs", "Trophy", DropClassifier.Kind.Trophy, "Normal mob trophies.");
+            Drp("meat", "MeatDropMultiplier", MB, "mobs", "Meat", DropClassifier.Kind.Meat, "Raw / cooked meat.");
+            Drp("parts", "PartsDropMultiplier", MB, "mobs", "Parts", DropClassifier.Kind.Parts, "Bones, entrails, eyes, glands, fangs.");
+            Drp("feathers", "FeatherDropMultiplier", MB, "mobs", "Feathers", DropClassifier.Kind.Feathers, "Feathers.");
+            Drp("specialparts", "SpecialPartsDropMultiplier", MB, "mobs", "Special Parts", DropClassifier.Kind.SpecialParts,
+                "Guck, ooze, soft tissue, carapace, bile, ...");
+
+            // Death
+            Tg("keepequip", "DeathKeepEquip", DT, "death", "Keep Equipment", GlobalKeys.DeathKeepEquip, "Keep equipped gear on death.");
+            Tg("keepinv", "DeathKeepInventory", DT, "death", "Keep Inventory", GlobalKeys.DeathKeepInventory, "Keep full inventory on death.");
+            Tg("deleteitems", "DeathDeleteItems", DT, "death", "Delete Items", GlobalKeys.DeathDeleteItems, "Delete items on death.");
+            Tg("deleteunequipped", "DeathDeleteUnequipped", DT, "death", "Delete Unequipped", GlobalKeys.DeathDeleteUnequipped,
+                "Delete unequipped items on death.");
+            Tg("skillreset", "DeathSkillsReset", DT, "death", "Skill Reset", GlobalKeys.DeathSkillsReset, "Reset skills on death.");
+
+            // Build / craft
+            Tg("nobuildcost", "NoBuildCost", BC, "build", "Free Building", GlobalKeys.NoBuildCost, "Building costs nothing.");
+            Tg("nocraftcost", "NoCraftCost", BC, "build", "Free Crafting", GlobalKeys.NoCraftCost, "Crafting costs nothing.");
+            Tg("allpieces", "AllPiecesUnlocked", BC, "build", "All Pieces", GlobalKeys.AllPiecesUnlocked, "All build pieces unlocked.");
+            Tg("allrecipes", "AllRecipesUnlocked", BC, "build", "All Recipes", GlobalKeys.AllRecipesUnlocked, "All recipes unlocked.");
+            Tg("noworkbench", "NoWorkbench", BC, "build", "No Workbench", GlobalKeys.NoWorkbench, "No workbench range required.");
+            Tg("toollocks", "WorldLevelLockedTools", BC, "build", "Tool Locks", GlobalKeys.WorldLevelLockedTools, "World-level tool locks.");
+
+            // Map / portals
+            Tg("nomap", "NoMap", MP, "map", "No Map", GlobalKeys.NoMap, "Disable map.");
+            Tg("noportals", "NoPortals", MP, "map", "No Portals", GlobalKeys.NoPortals, "Disable portals.");
+            Tg("nobossportals", "NoBossPortals", MP, "map", "No Boss Portals", GlobalKeys.NoBossPortals, "Disable boss portals.");
+            Tg("teleportall", "TeleportAll", MP, "map", "Teleport All", GlobalKeys.TeleportAll, "Teleport with ores/metals.");
+            Tg("dungeonbuild", "DungeonBuild", MP, "map", "Dungeon Build", GlobalKeys.DungeonBuild, "Allow building in dungeons.");
+
+            // World flags
+            Tg("nopseudo", "NoPseudoDrops", WF, "world", "No Pseudo Drops", GlobalKeys.NoPseudoDrops, "Disable pseudo drops.");
+            Tg("nobuildfall", "NoBuildingFall", WF, "world", "No Building Fall", GlobalKeys.NoBuildingFall, "Buildings do not fall.");
+            Tg("noheavysnow", "NoHeavySnow", WF, "world", "No Heavy Snow", GlobalKeys.NoHeavySnow, "No heavy snow.");
+            Tg("allheavysnow", "AllHeavySnow", WF, "world", "All Heavy Snow", GlobalKeys.AllHeavySnow, "Force heavy snow rules.");
+            Tg("fire", "Fire", WF, "world", "Fire", GlobalKeys.Fire, "Fire-related world flag.");
+
+            // Stations (higher = faster). Edited server-side in the stations' data, nothing needed on clients.
+            Smelter = Mul("smelter", "SmelterSpeedMultiplier", ST, "stations", "Smelter", "Smelter / kiln / furnace speed. 2 = twice as fast. Values below 1 are ignored.");
+            Cooking = Mul("cooking", "CookingSpeedMultiplier", ST, "stations", "Cooking", "Cooking station speed. 2 = twice as fast. Values below 1 are ignored.");
+            Fermenter =Mul("fermenter", "FermenterSpeedMultiplier", ST, "stations", "Fermenter", "Fermenter speed. 2 = twice as fast, 0.5 = half as fast. Applies to batches started after the change.");
+            Plants = Mul("plants", "PlantGrowSpeedMultiplier", ST, "stations", "Plant Grow", "Plant grow speed. 2 = twice as fast, 0.5 = half as fast. Applies to plants planted after the change.");
+
+            foreach (Rate r in All)
+                r.Bind(file);
+
+            file.Save();
+            _applied = Snapshot();
+        }
+
+        private static Rate Add(Rate r)
+        {
+            All.Add(r);
+            ByShort[r.Short] = r;
+            ByKey[r.Key] = r;
+            if (r.Drop.HasValue)
+                ByDrop[r.Drop.Value] = r;
+            return r;
+        }
+
+        private static Rate Pct(string sh, string key, string sec, string grp, string label, GlobalKeys gk, string desc)
+        {
+            return Add(new Rate
+            {
+                Short = sh, Key = key, Section = sec, Group = grp, Label = label, Description = desc,
+                Kind = RateKind.Percent, Min = 0, Max = 10000, DefaultValue = 100, GlobalKey = gk
+            });
+        }
+
+        private static Rate Mul(string sh, string key, string sec, string grp, string label, string desc)
+        {
+            return Add(new Rate
+            {
+                Short = sh, Key = key, Section = sec, Group = grp, Label = label, Description = desc,
+                Kind = RateKind.Multiplier, Min = 0, Max = 100, DefaultValue = 1
+            });
+        }
+
+        private static Rate Drp(string sh, string key, string sec, string grp, string label, DropClassifier.Kind kind, string desc)
+        {
+            return Add(new Rate
+            {
+                Short = sh, Key = key, Section = sec, Group = grp, Label = label, Description = desc,
+                Kind = RateKind.Multiplier, Min = 0, Max = 100, DefaultValue = 1, Drop = kind
+            });
+        }
+
+        private static Rate Tg(string sh, string key, string sec, string grp, string label, GlobalKeys gk, string desc)
+        {
+            return Add(new Rate
+            {
+                Short = sh, Key = key, Section = sec, Group = grp, Label = label, Description = desc,
+                Kind = RateKind.Toggle, GlobalKey = gk
+            });
+        }
+
+        private static Rate Sw(string sh, string key, string sec, string grp, string label, bool def, string desc)
+        {
+            return Add(new Rate
+            {
+                Short = sh, Key = key, Section = sec, Group = grp, Label = label, Description = desc,
+                Kind = RateKind.Switch, DefaultFlag = def
+            });
+        }
+
+        private static Rate Ch(string sh, string key, string sec, string grp, string label, string def, string[] options, string desc)
+        {
+            return Add(new Rate
+            {
+                Short = sh, Key = key, Section = sec, Group = grp, Label = label, Description = desc,
+                Kind = RateKind.Choice, DefaultText = def, Options = options
+            });
         }
     }
 }

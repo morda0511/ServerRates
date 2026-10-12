@@ -1,66 +1,90 @@
 # ServerRates
 
-**Dedicated-server rates for Valheim — built for crossplay.**  
-PC, PlayStation, and Xbox players all get the same rates. **Clients install nothing.**
+**Dedicated-server rates for Valheim, built for crossplay.**
+PC, PlayStation and Xbox players all get the same rates. **Clients install nothing.** Tune loot, combat, skills, stamina, portals and more from the dedicated server. Console players change rates live in the normal text chat.
 
-Tune loot, combat, skills, stamina, portals, crafting, and stations from your dedicated server. Console players change rates live in the **chat box**. Perfect for friends who play with a controller and never open a mod folder.
+**Dedicated server only** · Valheim 1.0 · BepInExPack 5.4.2350+. Listen servers / host-from-client are not supported.
 
-[Thunderstore](https://thunderstore.io/) · Dedicated + BepInEx only
-
----
-
-## Why this mod?
-
-Most rate mods either need every player to install something, or only offer one blunt “more resources” slider. ServerRates is different:
-
-- **Server-side only** — vanilla and console clients just join  
-- **Fine loot categories** — wood, meat, hides, ore, trophies, and more, not only one global multiplier  
-- **Chat commands for console** — `/sr_wood 9`, `/rates status`, …  
-- **Live apply** — no world restart when you change a rate  
-- **Yellow HUD feedback** — e.g. `Wood Multiplier x2` when a rate changes  
-- **Full server toolkit** — skills, combat, survival, death rules, portals, smelters, plants  
-
-If you host a dedicated server for a mixed PC + console group, this is for you.
+**Bug reports:** https://github.com/morda0511/ServerRates/issues
+**Discord:** https://discord.gg/aVKVVmyzj
 
 ---
 
 ## Features
 
-### Loot & resources
-- Global **Resource Rate** (vanilla world modifier, synced to all clients)  
-- **Category ground amp** on the dedicated server after loot hits the ground (works with PS5/Xbox)  
-- Materials: wood / fine / core / special wood, ore, scrap, stone, flint, crystal, fuel, gems, boss mats  
-- Consumables: crops, seeds, mushrooms, berries, fish, potions  
-- Mob drops: hide, trophy, meat, parts, feathers, special parts  
-
-### Combat & world
-- Player and enemy damage, enemy speed/size, star-up rate, raid frequency  
-- World level, passive mobs, player events  
-
-### Skills & survival
-- Skill gain and skill loss on death  
-- Stamina, move stamina, regen, eitr, adrenaline, food duration, durability, carry weight  
-
-### Building, travel, death
-- Free build/craft, unlock pieces/recipes, workbench range, tool locks (toggles)  
-- Map / portals / boss portals / teleport-all / dungeon build  
-- Keep equipment or inventory on death, delete items, skill reset  
-
-### Stations
-- Smelter, fermenter, cooking, and plant grow speed multipliers  
+- **Loot:** global Resource Rate plus per-category multipliers (wood, ore, meat, hide, trophies, crops, fish, potions, ...). Extra piles spawn on the ground, not in the air.
+- **Combat & world:** player/enemy damage, enemy speed/size/stars, raids, world level, passive mobs.
+- **Skills & survival:** skill gain/loss, stamina, eitr, adrenaline, food duration, durability, carry weight.
+- **Building, travel, death:** free build/craft, unlock pieces/recipes, portals, map, keep inventory/equipment.
+- **Live:** edit the config file or type a chat command, rates apply instantly. Everybody sees a yellow message when a rate changes.
 
 ---
 
-## Install (dedicated server only)
+## Chat commands (console + PC)
 
-1. Install **BepInEx** on your **Valheim dedicated server**  
-2. Drop `ServerRates.dll` into `BepInEx/plugins/ServerRates/`  
-3. Start the server once → `BepInEx/config/com.morda.serverrates.cfg`  
-4. Edit the config, use **Valheim Server Manager**, or use **chat / F5 commands**
+Type in the **normal chat box**, **without a slash** (Valheim handles `/` locally and never sends it to the server):
 
-**Do not put this mod in a client profile** unless you only want chat helpers on PC — rates activate only on a dedicated process.
+```text
+sr_wood 9          set wood to x9
+sr_wood            show wood
+sr_loot 5          every loot category x5
+sr_mobs 3          all mob drops x3
+rates preset x5    loot x5, skill gain 500%, plants + fermenter x5
+rates status       what differs from vanilla
+rates reset all    back to vanilla
+```
 
-Clients (vanilla PC, PS5, Xbox): **no install.**
+- Names can be abbreviated: `sr_fine` = `sr_finewood`. If a short name fits several, the server lists them.
+- Values: `5`, `x5`, `500%` all work. Toggles take `on` / `off` / `unchanged`.
+- Replies go **only to you**. Rate changes are announced to everybody.
+- PC players with the DLL on their client may also use `/sr_wood 9`.
+- Who may change rates is set by `ChatAccess` in the config:
+  `Everyone` (default, no adminlist needed, good for console) or `AdminOnly` (sender must be in the server adminlist). Anyone can always *read* values.
+- Turn chat commands off with `ChatCommandsEnabled = false`.
+- Server console / F5 (admins): the same commands, e.g. `sr_wood 9`, `rates status`.
+
+
+### Station info
+
+When you stand within 3 m of a smelter, kiln, furnace, cooking station or fermenter, the server shows a short message at the top left with the time **per item** (with your multiplier and the vanilla value for comparison). It is a plain message sent to you only, nothing is placed in the world. Switch it off with `sr_stationinfo off`, back on with `sr_stationinfo on`. `rates inspect` shows the same for the station next to you plus its stored values.
+
+### How chat reaches the server
+
+Valheim sends chat from client to client, the server is normally not a recipient. ServerRates therefore lists the server as a pseudo player named **ServerRates** in the player list (option `ChatBridge`, on by default). That makes every client send its chat to the server as well, so commands work even when you are the only player online. Commands are swallowed by the server and never shown to other players. If another mod already adds the server as a player (e.g. Server Devcommands "Server chat"), ServerRates does not add a second entry.
+
+### Meta commands
+
+| Command | Description |
+|---|---|
+| `rates help` | Short help |
+| `rates status` | Everything that differs from vanilla |
+| `rates list <group>` | Values of a group |
+| `rates cmds` | All groups and command names |
+| `rates get wood` / `rates set wood 9` | Read / write one value |
+| `rates preset vanilla\|x2\|x5\|x10` | Quick presets (any number 1-100) |
+| `rates reset <name\
+| `rates inspect` | Shows the stations within 8 m of you: stored values (owner, fuel, queue, ...) and the time **per item** with and without your multiplier |
+| `rates repair` | Like `inspect`, and sets a smelter's work-time store back to 0 ||group\|all>` | Back to vanilla |
+
+### Groups (set several rates at once: `sr_<group> <value>`)
+
+| Group | Contains |
+|---|---|
+| `loot` | `materials` + `consumables` + `mobs` |
+| `materials` | wood, finewood, corewood, specialwood, ore, scrap, stone, flint, crystal, fuel, gems, boss |
+| `consumables` | crops, seeds, mushrooms, berries, fish, potions |
+| `mobs` | hide, trophy, meat, parts, feathers, specialparts |
+| `skills` | skillgain, skillloss |
+| `combat` | playerdmg, enemydmg, enemyspeed, enemystars, events, worldlevel, passivemobs, playerevents |
+| `survival` | stamina, movestamina, staminaregen, eitr, adrenaline, food, durability, carry |
+| `resources` | resourcerate, groundamp, maxpiles, other |
+| `death` | keepequip, keepinv, deleteitems, deleteunequipped, skillreset |
+| `build` | nobuildcost, nocraftcost, allpieces, allrecipes, noworkbench, toollocks |
+| `map` | nomap, noportals, nobossportals, teleportall, dungeonbuild |
+| `world` | nopseudo, nobuildfall, noheavysnow, allheavysnow, fire |
+| `stations` | smelter, fermenter, cooking, plants |
+
+Every single rate is also its own command `sr_<name>`; `rates cmds` prints them all.
 
 ---
 
@@ -68,221 +92,40 @@ Clients (vanilla PC, PS5, Xbox): **no install.**
 
 | Type | Meaning |
 |---|---|
-| **Percent** | `100` = vanilla · `200` = x2 · `50` = half · `0` = off where it makes sense |
-| **Multiplier** | `1` = vanilla · `2` = x2 · `10` = x10 |
-| **Toggle** | `Unchanged` · `On` · `Off` |
+| **Percent** | `100` = vanilla, `200` = x2, `50` = half |
+| **Multiplier** | `1` = vanilla, `2` = x2, `10` = x10 |
+| **Toggle** | `Unchanged` / `On` / `Off` (`Off` removes the world flag, `Unchanged` leaves it alone) |
 
-Category loot multipliers stack **on top of** Resource Rate. They amplify ground piles on the dedicated server after items spawn.
+Category loot multipliers stack on top of Resource Rate.
 
----
+### How loot multipliers work
 
-## Chat commands (console + PC)
-
-Open the in-game chat and use the **`/`** prefix:
-
-```text
-/sr_wood 9
-/sr_meat 5
-/sr_resourcerate 200
-/rates status
-/rates help
-/rates cmds
-```
-
-- No value → show current setting  
-- With value → save + apply **live** (yellow center message)  
-- Chat commands do **not** require a Steam admin list (crossplay-friendly)  
-- Turn off with `ChatCommandsEnabled = false`  
-- Prefix is configurable (`ChatCommandPrefix`, default `/`)  
-
-PC players can also use the F5 console without `/`: `sr_wood 9`, `rates cmds`, …
-
-<details>
-<summary><strong>All commands (click to expand)</strong></summary>
-
-### Meta
-| Command | Description |
-|---|---|
-| `/rates help` | Short help |
-| `/rates status` | Overview |
-| `/rates list` | Many current values |
-| `/rates cmds` | List every `sr_*` command |
-| `/rates get wood` | Read one value |
-| `/rates set wood 9` | Same as `/sr_wood 9` |
-
-### General
-| Command | Description |
-|---|---|
-| `/sr_enabled` | Master switch (true/false) |
-| `/sr_chatcommandsenabled` | Allow chat rate commands |
-| `/sr_chatcommandprefix` | Chat prefix (default `/`) |
-
-### Skills
-| Command | Description |
-|---|---|
-| `/sr_skillgain` | Skill XP gain percent (100 = vanilla) |
-| `/sr_skillloss` | Skill loss on death percent |
-
-### Combat
-| Command | Description |
-|---|---|
-| `/sr_playerdmg` | Player damage percent |
-| `/sr_enemydmg` | Enemy damage percent |
-| `/sr_enemyspeed` | Enemy speed / size percent |
-| `/sr_enemystars` | Enemy star-up rate percent |
-| `/sr_events` | Raid / event frequency percent |
-| `/sr_worldlevel` | World level 0–10 |
-| `/sr_passivemobs` | Passive: Unchanged / On / Off |
-| `/sr_playerevents` | Toggle: Unchanged / On / Off |
-
-### Survival
-| Command | Description |
-|---|---|
-| `/sr_stamina` | Stamina drain percent |
-| `/sr_movestamina` | Move stamina drain percent |
-| `/sr_staminaregen` | Stamina regen percent |
-| `/sr_eitr` | Eitr rate percent |
-| `/sr_adrenaline` | Adrenaline rate percent |
-| `/sr_food` | Food duration percent |
-| `/sr_durability` | Durability loss percent |
-| `/sr_carry` | Carry weight percent |
-
-### Resources & loot master
-| Command | Description |
-|---|---|
-| `/sr_resourcerate` | Global Resource Rate percent (synced) |
-| `/sr_groundamp` | Category ground loot amp on/off |
-| `/sr_snapground` | Snap extra piles to ground |
-| `/sr_scatter` | Scatter force on extra piles |
-| `/sr_other` | Multiplier for uncategorized ground loot |
-
-### Materials
-| Command | Description |
-|---|---|
-| `/sr_wood` | Basic wood drop multiplier |
-| `/sr_finewood` | Fine wood multiplier |
-| `/sr_corewood` | Core wood (RoundLog) multiplier |
-| `/sr_specialwood` | Elder / Ygg / Ash / Black wood |
-| `/sr_ore` | Raw ore multiplier |
-| `/sr_scrap` | Scrap metal multiplier |
-| `/sr_stone` | Stone multiplier |
-| `/sr_flint` | Flint multiplier |
-| `/sr_crystal` | Crystal / obsidian multiplier |
-| `/sr_fuel` | Coal / resin / tar multiplier |
-| `/sr_gems` | Coins / amber / rubies multiplier |
-| `/sr_boss` | Boss materials multiplier |
-
-### Consumables
-| Command | Description |
-|---|---|
-| `/sr_crops` | Crops multiplier |
-| `/sr_seeds` | Seeds / cones multiplier |
-| `/sr_mushrooms` | Mushrooms multiplier |
-| `/sr_berries` | Berries / honey multiplier |
-| `/sr_fish` | Fish multiplier |
-| `/sr_potions` | Meads / potions multiplier |
-
-### Mob drops
-| Command | Description |
-|---|---|
-| `/sr_hide` | Hides / pelts / scales multiplier |
-| `/sr_trophy` | Mob trophies multiplier |
-| `/sr_meat` | Meat multiplier |
-| `/sr_parts` | Bones / entrails / glands multiplier |
-| `/sr_feathers` | Feathers multiplier |
-| `/sr_specialparts` | Guck / ooze / soft tissue multiplier |
-
-### Death
-| Command | Description |
-|---|---|
-| `/sr_keepequip` | Keep equipped gear (Unchanged/On/Off) |
-| `/sr_keepinv` | Keep full inventory |
-| `/sr_deleteitems` | Delete items on death |
-| `/sr_deleteunequipped` | Delete unequipped items |
-| `/sr_skillreset` | Reset skills on death |
-
-### Build / craft
-| Command | Description |
-|---|---|
-| `/sr_nobuildcost` | Free building |
-| `/sr_nocraftcost` | Free crafting |
-| `/sr_allpieces` | Unlock all build pieces |
-| `/sr_allrecipes` | Unlock all recipes |
-| `/sr_noworkbench` | No workbench range required |
-| `/sr_toollocks` | World-level tool locks |
-
-### Map / portals
-| Command | Description |
-|---|---|
-| `/sr_nomap` | Disable map |
-| `/sr_noportals` | Disable portals |
-| `/sr_nobossportals` | Disable boss portals |
-| `/sr_teleportall` | Teleport with ores / metals |
-| `/sr_dungeonbuild` | Allow building in dungeons |
-
-### World flags
-| Command | Description |
-|---|---|
-| `/sr_nopseudo` | Disable pseudo drops |
-| `/sr_nobuildfall` | Buildings do not fall |
-| `/sr_noheavysnow` | No heavy snow |
-| `/sr_allheavysnow` | Force heavy snow rules |
-| `/sr_fire` | Fire world flag |
-
-### Stations
-| Command | Description |
-|---|---|
-| `/sr_smelter` | Smelter / kiln speed multiplier |
-| `/sr_fermenter` | Fermenter speed multiplier |
-| `/sr_cooking` | Cooking station speed multiplier |
-| `/sr_plants` | Plant grow speed multiplier |
-
-</details>
+The dedicated watches item drops near players. When a fresh drop has come to rest on the ground, the server asks the nearest player's game to spawn the extra items next to it (vanilla SpawnObject RPC, so they fall and land like normal drops). `LootSpawn = Server` lets the server create them itself instead. Items a player ever held or crafted are never multiplied, so dropping and picking up items cannot be abused. Drop *chance* stays vanilla, only the amount changes. `MaxExtraPiles` caps how many extra items one drop can create.
 
 ---
 
-## Config sections
+## Config
 
-1. General  
-2. Skills  
-3. Combat  
-4. Survival  
-5. Resources  
-6. Loot (master)  
-6a. Materials  
-6b. Consumables  
-6c. Mob Drops  
-7. Death  
-8. Build / Craft  
-9. Map / Portals  
-10. World flags  
-11. Stations  
+**One file:** `BepInEx/config/com.morda.serverrates.cfg`
 
-The config reloads from disk while the server runs (file watcher). Rate commands also save and apply live.
+Edit it by hand or with Valheim Server Manager: the server notices the change within about two seconds and applies it live, no restart. Chat commands write to the same file.
 
 ---
 
-## Requirements
+## Install
 
-- Valheim **dedicated server**  
-- [BepInEx Pack for Valheim](https://thunderstore.io/c/valheim/p/denikson/BepInExPack_Valheim/)  
-- Not supported: listen server / “host from game client”  
+1. Install [BepInExPack Valheim](https://thunderstore.io/c/valheim/p/denikson/BepInExPack_Valheim/) on your **Valheim dedicated server**.
+2. Drop `ServerRates.dll` into `BepInEx/plugins/ServerRates/`.
+3. Start the server once to generate `com.morda.serverrates.cfg`.
+4. Edit the config, use Valheim Server Manager, or use chat commands.
+
+Clients (vanilla PC, PS5, Xbox): no install.
 
 ---
 
 ## Limitations
 
-- Per-skill XP (e.g. only Axes x2) needs a client mod — vanilla only has a global skill rate  
-- Direct inventory picks (some berries/pickables) may not go through ground ItemDrop amp  
-- Drop **chance** stays vanilla; ServerRates multiplies amounts after something already dropped  
-
----
-
-## Links
-
-- Source: GitHub (see repository)  
-- Optional companion: Valheim Server Manager (desktop cfg UI for dedicated)
-
----
-
-Made for servers that want a **clean, crossplay-friendly rate setup** — without forcing mods onto friends with controllers.
+- Per-skill XP needs a client mod. Vanilla only has a global skill rate.
+- Loot that goes straight into the inventory (some pickables) never lands on the ground and is not multiplied.
+- Station speed (`smelter`, `cooking`, `plants`, `fermenter`) is done by the server editing the stations' data, nothing is needed on the clients. `plants` and `fermenter` apply to plants planted and batches started after the change. `smelter` and `cooking` only speed things up (values below 1 are ignored) and only boost stations that are actually working (ore and fuel, fire lit). Cooked food is never pushed into burnt.
+- Existing config files keep working. The old options `SnapExtraDropsToGround` and `ExtraDropScatterForce` are no longer used.

@@ -1,753 +1,497 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Reflection;
 using System.Text;
-using BepInEx.Configuration;
 using HarmonyLib;
+using UnityEngine;
 
 namespace ServerRates
 {
+    /// <summary>Who typed the command and how to answer / what they may do.</summary>
+    internal sealed class CommandContext
+    {
+        public string Who = "console";
+        public bool CanWrite = true;
+        public Action<string> Reply;
+        public Vector3? Position; // where the sender stands (chat only)
+    }
+
     /// <summary>
-    /// Dedicated / admin console:
-    ///   rates … (meta)
-    ///   sr_&lt;rate&gt; [value]  — one command per config rate
+    /// One parser for chat (console + PC), F5 and the server console.
+    ///   sr_wood 9          set       sr_wood           show
+    ///   sr_loot 5          set every loot category (loot / materials / consumables / mobs)
+    ///   rates status | list [group] | cmds | reset [name|all] | preset x5 | get/set name [value]
+    /// Names may be abbreviated (sr_spec = specialwood is ambiguous, sr_fine = finewood).
     /// </summary>
     internal static class RatesCommands
     {
-        private static bool _added;
-        private static string[] _keyCache;
-
-        /// <summary>short cmd (without sr_) → ModConfig property name</summary>
-        private static readonly Dictionary<string, string> ShortToKey =
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        private static readonly Dictionary<string, string> KeyToShort =
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        private static bool _mapBuilt;
-
-        public static void EnsureMaps()
+        private static readonly Dictionary<string, string> GroupAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            if (_mapBuilt)
-                return;
-            BuildShortNameMap();
-            _mapBuilt = true;
-        }
+            { "mob", "mobs" }, { "mobdrops", "mobs" }, { "drops", "loot" }, { "mats", "materials" },
+            { "station", "stations" }, { "resource", "resources" }, { "res", "resources" }
+        };
 
-        public static bool IsKnownShortOrKey(string token)
+        private static bool _registered;
+
+        // ---------------------------------------------------------------- entry point
+
+        public static void Process(string line, CommandContext ctx)
         {
-            EnsureMaps();
-            if (string.IsNullOrEmpty(token))
-                return false;
-            if (ShortToKey.ContainsKey(token))
-                return true;
-            if (token.StartsWith("sr_", StringComparison.OrdinalIgnoreCase)
-                && ShortToKey.ContainsKey(token.Substring(3)))
-                return true;
-            return FindProp(token) != null;
-        }
-
-        /// <summary>Parse one command line (no prefix). Used by Terminal and chat.</summary>
-        public static void ProcessLine(string line, Action<string> reply)
-        {
-            if (reply == null)
-                return;
-            EnsureMaps();
-
             if (!Plugin.Active || ZNet.instance == null || !ZNet.instance.IsDedicated())
             {
-                reply("ServerRates: commands only work on the dedicated server.");
+                ctx.Reply("ServerRates: commands only work on the dedicated server.");
                 return;
             }
 
-            string[] parts = SplitArgs(line);
-            if (parts.Length == 0)
+            string[] t = Tokens(line);
+            if (t.Length == 0)
             {
-                PrintHelp(reply);
+                Help(ctx);
                 return;
             }
 
-            string head = parts[0];
-            string headLower = head.ToLowerInvariant();
+            string head = t[0].ToLowerInvariant();
 
-            // sr_wood [value]  OR  wood [value]
-            if (headLower.StartsWith("sr_") || ShortToKey.ContainsKey(head) || FindProp(head) != null)
+            if (head.StartsWith("sr_"))
             {
-                string prop = ResolveKey(head);
-                if (prop == null)
-                {
-                    reply("ServerRates: unknown '" + head + "' — try /rates cmds");
+                Target(head.Substring(3), t, 1, ctx);
+                return;
+            }
+
+            if (head != "rates" && head != "sr")
+            {
+                Help(ctx);
+                return;
+            }
+
+            if (t.Length == 1)
+            {
+                Help(ctx);
+                return;
+            }
+
+            string sub = t[1].ToLowerInvariant();
+            switch (sub)
+            {
+                case "help":
+                case "?":
+                    Help(ctx);
                     return;
-                }
-
-                string shortName = KeyToShort.TryGetValue(prop, out string sh) ? sh : head;
-                if (parts.Length < 2)
-                {
-                    if (TryGet(prop, out string text, out string err))
-                        reply("ServerRates: " + text + "  (set: !" + "sr_" + shortName + " <value>)");
-                    else
-                        reply("rates get failed: " + err);
+                case "status":
+                    Status(ctx);
                     return;
-                }
-
-                ApplySet(reply, prop, JoinParts(parts, 1));
-                return;
+                case "list":
+                case "keys":
+                    ListRates(ctx, t.Length > 2 ? t[2] : null);
+                    return;
+                case "cmds":
+                case "commands":
+                    Commands(ctx);
+                    return;
+                case "get":
+                    if (t.Length < 3) ctx.Reply("Usage: rates get <name>");
+                    else Target(t[2].ToLowerInvariant(), t, 3, ctx, true);
+                    return;
+                case "set":
+                case "apply":
+                    if (t.Length < 4) ctx.Reply("Usage: rates set <name> <value>");
+                    else Target(t[2].ToLowerInvariant(), t, 3, ctx);
+                    return;
+                case "reset":
+                    Reset(ctx, t.Length > 2 ? t[2].ToLowerInvariant() : null);
+                    return;
+                case "inspect":
+                    StationBoost.Inspect(ctx, false);
+                    return;
+                case "repair":
+                    if (!ctx.CanWrite) ctx.Reply("Only server admins can do this (ChatAccess=AdminOnly).");
+                    else StationBoost.Inspect(ctx, true);
+                    return;
+                case "preset":
+                    Preset(ctx, t.Length > 2 ? t[2].ToLowerInvariant() : null);
+                    return;
+                default:
+                    Target(sub, t, 2, ctx);
+                    return;
             }
-
-            if (headLower == "rates")
-            {
-                ProcessRatesMeta(parts, reply);
-                return;
-            }
-
-            PrintHelp(reply);
         }
 
-        private static void ProcessRatesMeta(string[] parts, Action<string> reply)
-        {
-            if (parts.Length < 2)
-            {
-                PrintHelp(reply);
-                return;
-            }
-
-            string sub = parts[1].ToLowerInvariant();
-
-            if (ShortToKey.TryGetValue(sub, out string propFromShort)
-                || KeyToShort.ContainsKey(parts[1]))
-            {
-                string prop = ShortToKey.TryGetValue(sub, out string k) ? k : FindProp(parts[1])?.Name;
-                if (prop == null)
-                {
-                    PrintHelp(reply);
-                    return;
-                }
-
-                if (parts.Length < 3)
-                {
-                    if (TryGet(prop, out string text, out string err))
-                        reply("ServerRates: " + text);
-                    else
-                        reply("rates get failed: " + err);
-                    return;
-                }
-
-                ApplySet(reply, prop, JoinParts(parts, 2));
-                return;
-            }
-
-            if (sub == "help" || sub == "?")
-            {
-                PrintHelp(reply);
-                return;
-            }
-            if (sub == "status")
-            {
-                PrintStatus(reply, false);
-                return;
-            }
-            if (sub == "list" || sub == "keys")
-            {
-                PrintStatus(reply, true);
-                return;
-            }
-            if (sub == "cmds" || sub == "commands")
-            {
-                PrintAllCommands(reply);
-                return;
-            }
-            if (sub == "get")
-            {
-                if (parts.Length < 3)
-                {
-                    reply("Usage: /rates get <Key|short>");
-                    return;
-                }
-                string prop = ResolveKey(parts[2]);
-                if (prop == null)
-                {
-                    reply("unknown key '" + parts[2] + "' (/rates cmds)");
-                    return;
-                }
-                if (!TryGet(prop, out string text, out string err))
-                {
-                    reply("rates get failed: " + err);
-                    return;
-                }
-                reply("ServerRates: " + text);
-                return;
-            }
-            if (sub == "set" || sub == "apply")
-            {
-                if (parts.Length < 4)
-                {
-                    reply("Usage: /rates set <Key|short> <value>");
-                    return;
-                }
-                string prop = ResolveKey(parts[2]);
-                if (prop == null)
-                {
-                    reply("unknown key '" + parts[2] + "' (/rates cmds)");
-                    return;
-                }
-                ApplySet(reply, prop, JoinParts(parts, 3));
-                return;
-            }
-
-            PrintHelp(reply);
-        }
-
-        private static string[] SplitArgs(string line)
+        private static string[] Tokens(string line)
         {
             if (string.IsNullOrWhiteSpace(line))
-                return Array.Empty<string>();
-            return line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                return new string[0];
+            return line.Replace('=', ' ').Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
-        private static string JoinParts(string[] parts, int startIndex)
+        private static string Join(string[] t, int from)
         {
-            if (parts == null || startIndex >= parts.Length)
-                return "";
-            if (startIndex == parts.Length - 1)
-                return parts[startIndex];
-            return string.Join(" ", parts, startIndex, parts.Length - startIndex);
+            return from >= t.Length ? "" : string.Join(" ", t, from, t.Length - from);
         }
+
+        // ---------------------------------------------------------------- name resolving
+
+        /// <summary>Resolves a name to one rate or a group of rates. Replies and returns false when it cannot.</summary>
+        private static bool Resolve(string name, CommandContext ctx, out List<Rate> rates, out string group)
+        {
+            rates = null;
+            group = null;
+            name = name.ToLowerInvariant();
+            if (name.StartsWith("sr_"))
+                name = name.Substring(3);
+
+            Rate exact = Rates.Find(name);
+            if (exact != null)
+            {
+                rates = new List<Rate> { exact };
+                return true;
+            }
+
+            string g = name;
+            string alias;
+            if (GroupAliases.TryGetValue(name, out alias))
+                g = alias;
+            if (Rates.Groups.ContainsKey(g))
+            {
+                group = g.ToLowerInvariant();
+                rates = Rates.InGroup(group);
+                return true;
+            }
+
+            var starts = new List<Rate>();
+            var contains = new List<Rate>();
+            foreach (Rate r in Rates.All)
+            {
+                if (r.Short.StartsWith(name, StringComparison.OrdinalIgnoreCase)) starts.Add(r);
+                else if (r.Short.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0) contains.Add(r);
+            }
+
+            List<Rate> found = starts.Count > 0 ? starts : contains;
+            if (found.Count == 1)
+            {
+                rates = found;
+                return true;
+            }
+
+            if (found.Count > 1)
+            {
+                var names = new List<string>();
+                for (int i = 0; i < found.Count && i < 8; i++)
+                    names.Add(found[i].Short);
+                ctx.Reply("'" + name + "' could be: " + string.Join(", ", names.ToArray()));
+                return false;
+            }
+
+            ctx.Reply("Unknown '" + name + "'. Try: rates cmds");
+            return false;
+        }
+
+        // ---------------------------------------------------------------- get / set
+
+        private static void Target(string name, string[] t, int valueFrom, CommandContext ctx, bool readOnly = false)
+        {
+            List<Rate> rates;
+            string group;
+            if (!Resolve(name, ctx, out rates, out group))
+                return;
+
+            string value = Join(t, valueFrom);
+            if (readOnly || value.Length == 0)
+            {
+                Show(ctx, rates, group);
+                return;
+            }
+
+            if (!ctx.CanWrite)
+            {
+                ctx.Reply("Only server admins can change rates here (ChatAccess=AdminOnly).");
+                return;
+            }
+
+            string error = null;
+            int ok = 0;
+            foreach (Rate r in rates)
+            {
+                string err;
+                if (r.TrySet(value, out err))
+                    ok++;
+                else if (error == null)
+                    error = err;
+            }
+
+            if (ok == 0)
+            {
+                ctx.Reply(error ?? "Nothing changed.");
+                return;
+            }
+
+            Commit(ctx, group != null ? Cap(group) : null);
+            if (error != null && rates.Count > 1)
+                ctx.Reply("Some rates were skipped: " + error);
+        }
+
+        private static void Show(CommandContext ctx, List<Rate> rates, string group)
+        {
+            if (rates.Count == 1)
+            {
+                Rate r = rates[0];
+                ctx.Reply(r.Label + ": " + r.Display() + "  (sr_" + r.Short + " <" + r.RangeHint() + ">)");
+                return;
+            }
+
+            Reply(ctx, Cap(group ?? "rates"), rates);
+        }
+
+        /// <summary>Save, apply to the world and tell everybody what changed.</summary>
+        private static void Commit(CommandContext ctx, string label)
+        {
+            Rates.Save();
+            ConfigWatch.NotifySaved();
+
+            List<Rate> changed = Rates.TakeChanges();
+            RateApplier.ApplyGlobalKeys();
+            CategoryGroundAmp.LogStatus();
+
+            if (changed.Count == 0)
+            {
+                ctx.Reply("Already set, nothing changed.");
+                return;
+            }
+
+            RatesFeedback.AnnounceChanges(changed, ctx.Who, label);
+        }
+
+        // ---------------------------------------------------------------- reset / preset
+
+        private static void Reset(CommandContext ctx, string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                ctx.Reply("Usage: rates reset <name|group|all>");
+                return;
+            }
+
+            if (!ctx.CanWrite)
+            {
+                ctx.Reply("Only server admins can change rates here (ChatAccess=AdminOnly).");
+                return;
+            }
+
+            if (name == "all")
+            {
+                ResetAll();
+                Commit(ctx, "All rates");
+                return;
+            }
+
+            List<Rate> rates;
+            string group;
+            if (!Resolve(name, ctx, out rates, out group))
+                return;
+
+            foreach (Rate r in rates)
+                r.Reset();
+            Commit(ctx, group != null ? Cap(group) : null);
+        }
+
+        private static void ResetAll()
+        {
+            foreach (Rate r in Rates.All)
+                if (r.Group != "general")
+                    r.Reset();
+        }
+
+        private static void Preset(CommandContext ctx, string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                ctx.Reply("Usage: rates preset vanilla | x2 | x3 | x5 | x10 (any number 1-100)");
+                return;
+            }
+
+            if (!ctx.CanWrite)
+            {
+                ctx.Reply("Only server admins can change rates here (ChatAccess=AdminOnly).");
+                return;
+            }
+
+            if (name == "vanilla" || name == "default" || name == "off")
+            {
+                ResetAll();
+                Commit(ctx, "Vanilla");
+                return;
+            }
+
+            string num = name.TrimStart('x');
+            float n;
+            if (!float.TryParse(num, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out n) || n < 1f || n > 100f)
+            {
+                ctx.Reply("Unknown preset '" + name + "'. Try vanilla, x2, x5, x10");
+                return;
+            }
+
+            string err;
+            foreach (Rate r in Rates.InGroup("loot"))
+                r.TrySet(num, out err);
+            Rates.Find("skillgain").TrySet((n * 100f).ToString(System.Globalization.CultureInfo.InvariantCulture), out err);
+            foreach (Rate r in Rates.InGroup("stations"))
+                r.TrySet(num, out err);
+
+            Commit(ctx, "Preset x" + Rate.Fmt(n));
+        }
+
+        // ---------------------------------------------------------------- info output
+
+        private static void Help(CommandContext ctx)
+        {
+            ctx.Reply("ServerRates (type without a slash):");
+            ctx.Reply("sr_wood 5 = set | sr_wood = show | sr_loot 5 = all loot");
+            ctx.Reply("rates status | rates list loot | rates cmds");
+            ctx.Reply("rates preset x5 | rates reset all | rates reset wood");
+            ctx.Reply("rates inspect | rates repair  (station next to you)");
+        }
+
+        private static void Status(CommandContext ctx)
+        {
+            ctx.Reply("ServerRates v" + Plugin.ModVersion + " " + Rates.Enabled.Display()
+                + " | chat: " + (Rates.ChatEnabled.Flag ? Rates.ChatAccess.Display() : "off"));
+
+            var changed = new List<Rate>();
+            foreach (Rate r in Rates.All)
+                if (r.Group != "general" && !r.IsDefault())
+                    changed.Add(r);
+
+            if (changed.Count == 0)
+                ctx.Reply("All rates are vanilla.");
+            else
+                Reply(ctx, "Changed", changed);
+        }
+
+        private static void ListRates(CommandContext ctx, string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                ctx.Reply("Groups: " + string.Join(" ", GroupNames()));
+                ctx.Reply("Example: rates list loot");
+                return;
+            }
+
+            List<Rate> rates;
+            string group;
+            if (!Resolve(name, ctx, out rates, out group))
+                return;
+            Show(ctx, rates, group);
+        }
+
+        private static void Commands(CommandContext ctx)
+        {
+            ctx.Reply("Groups (set all at once): " + string.Join(" ", GroupNames()));
+            foreach (string g in GroupNames())
+            {
+                if (g == "loot")
+                    continue;
+                var names = new List<string>();
+                foreach (Rate r in Rates.InGroup(g))
+                    names.Add(r.Short);
+                Pack(ctx, g, names);
+            }
+        }
+
+        private static List<string> GroupNames()
+        {
+            var list = new List<string>();
+            foreach (string g in Rates.Groups.Keys)
+                list.Add(g);
+            return list;
+        }
+
+        /// <summary>Compact "name value" lines, short enough for a console chat box.</summary>
+        private static void Reply(CommandContext ctx, string title, List<Rate> rates)
+        {
+            var items = new List<string>();
+            foreach (Rate r in rates)
+                items.Add(r.Short + " " + r.Display());
+            Pack(ctx, title, items);
+        }
+
+        private static void Pack(CommandContext ctx, string title, List<string> items)
+        {
+            const int max = 90;
+            var sb = new StringBuilder(title + ":");
+            foreach (string item in items)
+            {
+                if (sb.Length + item.Length + 3 > max)
+                {
+                    ctx.Reply(sb.ToString());
+                    sb.Clear();
+                    sb.Append("  ");
+                }
+                sb.Append(sb.Length > 2 && sb[sb.Length - 1] != ':' ? " | " : " ").Append(item);
+            }
+            if (sb.Length > 2)
+                ctx.Reply(sb.ToString());
+        }
+
+        private static string Cap(string s)
+        {
+            return string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s.Substring(1);
+        }
+
+        // ---------------------------------------------------------------- F5 / server console
 
         public static void Register()
         {
-            if (_added)
-                return;
-            _added = true;
-
             try
             {
-                EnsureMaps();
+                var cmds = Traverse.Create(typeof(Terminal)).Field("commands").GetValue<System.Collections.IDictionary>();
+                if (_registered && cmds != null && cmds.Contains("rates"))
+                    return;
 
-                // No onlyAdmin — console / crossplay players often cannot be on adminlist.
+                // Same flags as before: onlyServer + remoteCommand so F5 admins reach the dedicated.
                 new Terminal.ConsoleCommand(
-                    "rates",
-                    "ServerRates: status | list | cmds | get <Key> | set <Key> <value> | help",
-                    OnRatesConsole,
-                    false, true, true, false, true, false,
-                    FetchRatesTabOptions, true, true, false);
+                    "rates", "ServerRates: status | list | cmds | preset | reset | help",
+                    OnConsole, false, true, true, false, true, false, FetchOptions, true, true, false);
 
-                foreach (KeyValuePair<string, string> pair in ShortToKey)
-                {
-                    string shortName = pair.Key;
-                    string propName = pair.Value;
-                    string cmd = "sr_" + shortName;
+                foreach (Rate r in Rates.All)
+                    RegisterOne("sr_" + r.Short, r.Key + " [value]");
+                foreach (string g in Rates.Groups.Keys)
+                    RegisterOne("sr_" + g, "all " + g + " rates [value]");
 
-                    string keyCapture = propName;
-                    string shortCapture = shortName;
-
-                    new Terminal.ConsoleCommand(
-                        cmd,
-                        "ServerRates " + propName + " — sr_" + shortCapture + " [value]",
-                        args => OnSingleRate(args, keyCapture, shortCapture),
-                        false, true, true, false, true, false,
-                        null, false, true, false);
-                }
-
-                Plugin.Log?.LogInfo("ServerRates: registered " + ShortToKey.Count
-                    + " rate commands (sr_* + chat " + (Plugin.Settings?.ChatCommandPrefix?.Value ?? "/") + ").");
+                _registered = true;
+                Plugin.Log?.LogInfo("ServerRates: registered F5/console commands (rates, sr_*).");
             }
             catch (Exception ex)
             {
-                _added = false;
+                _registered = false;
                 Plugin.Log?.LogError("ServerRates: failed to register console commands: " + ex);
             }
         }
 
-        private static void BuildShortNameMap()
+        private static void RegisterOne(string cmd, string help)
         {
-            ShortToKey.Clear();
-            KeyToShort.Clear();
-
-            // Preferred short names (unique, easy to type)
-            AddShort("Enabled", "enabled");
-            AddShort("SkillGainPercent", "skillgain");
-            AddShort("SkillReductionPercent", "skillloss");
-            AddShort("PlayerDamagePercent", "playerdmg");
-            AddShort("EnemyDamagePercent", "enemydmg");
-            AddShort("EnemySpeedSizePercent", "enemyspeed");
-            AddShort("EnemyLevelUpPercent", "enemystars");
-            AddShort("EventRatePercent", "events");
-            AddShort("WorldLevel", "worldlevel");
-            AddShort("PassiveMobs", "passivemobs");
-            AddShort("PlayerEvents", "playerevents");
-            AddShort("StaminaPercent", "stamina");
-            AddShort("MoveStaminaPercent", "movestamina");
-            AddShort("StaminaRegenPercent", "staminaregen");
-            AddShort("EitrPercent", "eitr");
-            AddShort("AdrenalinePercent", "adrenaline");
-            AddShort("FoodPercent", "food");
-            AddShort("DurabilityPercent", "durability");
-            AddShort("CarryWeightPercent", "carry");
-            AddShort("ResourceRatePercent", "resourcerate");
-            AddShort("CategoryGroundAmp", "groundamp");
-            AddShort("SnapExtraDropsToGround", "snapground");
-            AddShort("ExtraDropScatterForce", "scatter");
-            AddShort("OtherDropMultiplier", "other");
-            AddShort("WoodDropMultiplier", "wood");
-            AddShort("FineWoodDropMultiplier", "finewood");
-            AddShort("CoreWoodDropMultiplier", "corewood");
-            AddShort("SpecialWoodDropMultiplier", "specialwood");
-            AddShort("OreDropMultiplier", "ore");
-            AddShort("ScrapDropMultiplier", "scrap");
-            AddShort("StoneDropMultiplier", "stone");
-            AddShort("FlintDropMultiplier", "flint");
-            AddShort("CrystalDropMultiplier", "crystal");
-            AddShort("FuelDropMultiplier", "fuel");
-            AddShort("GemDropMultiplier", "gems");
-            AddShort("BossDropMultiplier", "boss");
-            AddShort("CropDropMultiplier", "crops");
-            AddShort("SeedDropMultiplier", "seeds");
-            AddShort("MushroomDropMultiplier", "mushrooms");
-            AddShort("BerryHoneyDropMultiplier", "berries");
-            AddShort("FishDropMultiplier", "fish");
-            AddShort("PotionDropMultiplier", "potions");
-            AddShort("HideDropMultiplier", "hide");
-            AddShort("TrophyDropMultiplier", "trophy");
-            AddShort("MeatDropMultiplier", "meat");
-            AddShort("PartsDropMultiplier", "parts");
-            AddShort("FeatherDropMultiplier", "feathers");
-            AddShort("SpecialPartsDropMultiplier", "specialparts");
-            AddShort("DeathKeepEquip", "keepequip");
-            AddShort("DeathKeepInventory", "keepinv");
-            AddShort("DeathDeleteItems", "deleteitems");
-            AddShort("DeathDeleteUnequipped", "deleteunequipped");
-            AddShort("DeathSkillsReset", "skillreset");
-            AddShort("NoBuildCost", "nobuildcost");
-            AddShort("NoCraftCost", "nocraftcost");
-            AddShort("AllPiecesUnlocked", "allpieces");
-            AddShort("AllRecipesUnlocked", "allrecipes");
-            AddShort("NoWorkbench", "noworkbench");
-            AddShort("WorldLevelLockedTools", "toollocks");
-            AddShort("NoMap", "nomap");
-            AddShort("NoPortals", "noportals");
-            AddShort("NoBossPortals", "nobossportals");
-            AddShort("TeleportAll", "teleportall");
-            AddShort("DungeonBuild", "dungeonbuild");
-            AddShort("NoPseudoDrops", "nopseudo");
-            AddShort("NoBuildingFall", "nobuildfall");
-            AddShort("NoHeavySnow", "noheavysnow");
-            AddShort("AllHeavySnow", "allheavysnow");
-            AddShort("Fire", "fire");
-            AddShort("SmelterSpeedMultiplier", "smelter");
-            AddShort("FermenterSpeedMultiplier", "fermenter");
-            AddShort("CookingSpeedMultiplier", "cooking");
-            AddShort("PlantGrowSpeedMultiplier", "plants");
-
-            // Any property not listed yet → auto short name
-            foreach (PropertyInfo prop in typeof(ModConfig).GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (!IsConfigEntry(prop.PropertyType))
-                    continue;
-                if (KeyToShort.ContainsKey(prop.Name))
-                    continue;
-                string auto = AutoShort(prop.Name);
-                AddShort(prop.Name, auto);
-            }
+            new Terminal.ConsoleCommand(
+                cmd, "ServerRates " + help, OnConsole,
+                false, true, true, false, true, false, null, false, true, false);
         }
 
-        private static void AddShort(string propName, string shortName)
+        private static List<string> FetchOptions()
         {
-            if (ShortToKey.ContainsKey(shortName))
-            {
-                Plugin.Log?.LogWarning("ServerRates: duplicate short name '" + shortName + "' for " + propName);
-                shortName = shortName + "2";
-            }
-            ShortToKey[shortName] = propName;
-            KeyToShort[propName] = shortName;
-        }
-
-        private static string AutoShort(string propName)
-        {
-            string s = propName;
-            if (s.EndsWith("DropMultiplier", StringComparison.Ordinal))
-                s = s.Substring(0, s.Length - "DropMultiplier".Length);
-            else if (s.EndsWith("SpeedMultiplier", StringComparison.Ordinal))
-                s = s.Substring(0, s.Length - "SpeedMultiplier".Length) + "speed";
-            else if (s.EndsWith("Percent", StringComparison.Ordinal))
-                s = s.Substring(0, s.Length - "Percent".Length);
-            else if (s.EndsWith("Multiplier", StringComparison.Ordinal))
-                s = s.Substring(0, s.Length - "Multiplier".Length);
-            return s.ToLowerInvariant();
-        }
-
-        private static List<string> FetchRatesTabOptions()
-        {
-            var opts = new List<string> { "status", "list", "cmds", "get", "set", "help" };
-            opts.AddRange(ShortToKey.Keys);
-            opts.AddRange(GetAllKeys());
+            var opts = new List<string> { "status", "list", "cmds", "preset", "reset", "help" };
+            foreach (Rate r in Rates.All)
+                opts.Add(r.Short);
             return opts;
         }
 
-        private static string[] GetAllKeys()
+        private static void OnConsole(Terminal.ConsoleEventArgs args)
         {
-            if (_keyCache != null)
-                return _keyCache;
-            var keys = new List<string>();
-            foreach (PropertyInfo prop in typeof(ModConfig).GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (IsConfigEntry(prop.PropertyType))
-                    keys.Add(prop.Name);
-            }
-            keys.Sort(StringComparer.OrdinalIgnoreCase);
-            _keyCache = keys.ToArray();
-            return _keyCache;
-        }
-
-        private static bool IsConfigEntry(Type t)
-        {
-            return t != null && t.IsGenericType && t.GetGenericTypeDefinition() == typeof(ConfigEntry<>);
-        }
-
-        private static void OnSingleRate(Terminal.ConsoleEventArgs args, string propName, string shortName)
-        {
-            if (args?.Context == null)
+            if (args == null || args.Context == null || args.Args == null || args.Args.Length == 0)
                 return;
 
-            Action<string> reply = s => RatesFeedback.Say(s, false);
-            if (args.Length < 2)
-                ProcessLine("sr_" + shortName, reply);
-            else
-                ProcessLine("sr_" + shortName + " " + JoinArgsFrom(args, 1), reply);
-        }
-
-        private static void OnRatesConsole(Terminal.ConsoleEventArgs args)
-        {
-            if (args?.Context == null)
-                return;
-
-            Action<string> reply = s => RatesFeedback.Say(s, false);
-            if (args.Length < 2)
+            Process(string.Join(" ", args.Args), new CommandContext
             {
-                ProcessLine("rates", reply);
-                return;
-            }
-
-            ProcessLine("rates " + JoinArgsFrom(args, 1), reply);
-        }
-
-        private static string ResolveKey(string raw)
-        {
-            if (ShortToKey.TryGetValue(raw, out string fromShort))
-                return fromShort;
-            if (raw.StartsWith("sr_", StringComparison.OrdinalIgnoreCase)
-                && ShortToKey.TryGetValue(raw.Substring(3), out string fromSr))
-                return fromSr;
-            PropertyInfo prop = FindProp(raw);
-            return prop?.Name;
-        }
-
-        private static string JoinArgsFrom(Terminal.ConsoleEventArgs args, int startIndex)
-        {
-            if (args.Args == null || startIndex >= args.Args.Length)
-                return args.Length > startIndex ? args[startIndex] : "";
-            if (startIndex == args.Args.Length - 1)
-                return args.Args[startIndex];
-            return string.Join(" ", args.Args, startIndex, args.Args.Length - startIndex);
-        }
-
-        private static void ApplySet(Action<string> reply, string propName, string value)
-        {
-            if (!TrySet(propName, value, out string err, out string applied))
-            {
-                reply("rates set failed: " + err);
-                return;
-            }
-
-            ConfigWatch.SuppressReloadBriefly(2f);
-            if (Plugin.Instance != null)
-                Plugin.Instance.Config.Save();
-            RateApplier.NotifyConfigReloaded();
-            RateApplier.ApplyGlobalKeys();
-            CategoryGroundAmp.LogStatus();
-
-            string shortName = KeyToShort.TryGetValue(propName, out string s) ? s : propName;
-            string hud = FormatHudMessage(propName, applied);
-            RatesFeedback.Say(hud, true);
-            Plugin.Log?.LogInfo("ServerRates command live-applied: " + propName + "=" + applied
-                + " (sr_" + shortName + ")");
-        }
-
-        private static string FormatHudMessage(string propName, string applied)
-        {
-            string label = FriendlyHudLabel(propName);
-            if (propName.EndsWith("Percent", StringComparison.Ordinal))
-                return label + " " + applied + "%";
-            if (propName.EndsWith("Multiplier", StringComparison.Ordinal)
-                || propName.Equals("ExtraDropScatterForce", StringComparison.OrdinalIgnoreCase)
-                || propName.Equals("WorldLevel", StringComparison.OrdinalIgnoreCase))
-                return label + " Multiplier x" + applied;
-            if (propName.EndsWith("Enabled", StringComparison.Ordinal)
-                || propName.Contains("Amp")
-                || propName.Contains("Snap"))
-                return label + ": " + applied;
-            // toggles Unchanged/On/Off
-            return label + ": " + applied;
-        }
-
-        private static string FriendlyHudLabel(string propName)
-        {
-            if (KeyToShort.TryGetValue(propName, out string sh))
-            {
-                switch (sh)
-                {
-                    case "wood": return "Wood";
-                    case "finewood": return "Fine Wood";
-                    case "corewood": return "Core Wood";
-                    case "specialwood": return "Special Wood";
-                    case "ore": return "Ore";
-                    case "scrap": return "Scrap";
-                    case "stone": return "Stone";
-                    case "flint": return "Flint";
-                    case "crystal": return "Crystal";
-                    case "fuel": return "Fuel";
-                    case "gems": return "Gems";
-                    case "boss": return "Boss Mats";
-                    case "crops": return "Crops";
-                    case "seeds": return "Seeds";
-                    case "mushrooms": return "Mushrooms";
-                    case "berries": return "Berries";
-                    case "fish": return "Fish";
-                    case "potions": return "Potions";
-                    case "hide": return "Hide";
-                    case "trophy": return "Trophy";
-                    case "meat": return "Meat";
-                    case "parts": return "Parts";
-                    case "feathers": return "Feathers";
-                    case "specialparts": return "Special Parts";
-                    case "resourcerate": return "Resource Rate";
-                    case "skillgain": return "Skill Gain";
-                    case "skillloss": return "Skill Loss";
-                    case "playerdmg": return "Player Damage";
-                    case "enemydmg": return "Enemy Damage";
-                    case "groundamp": return "Ground Amp";
-                    case "teleportall": return "Teleport All";
-                    case "smelter": return "Smelter";
-                    case "fermenter": return "Fermenter";
-                    case "cooking": return "Cooking";
-                    case "plants": return "Plant Grow";
-                    case "other": return "Other Loot";
-                    case "scatter": return "Drop Scatter";
-                }
-            }
-
-            string n = propName;
-            if (n.EndsWith("DropMultiplier")) n = n.Substring(0, n.Length - "DropMultiplier".Length);
-            else if (n.EndsWith("SpeedMultiplier")) n = n.Substring(0, n.Length - "SpeedMultiplier".Length);
-            else if (n.EndsWith("Percent")) n = n.Substring(0, n.Length - "Percent".Length);
-            else if (n.EndsWith("Multiplier")) n = n.Substring(0, n.Length - "Multiplier".Length);
-            return System.Text.RegularExpressions.Regex.Replace(n, "([a-z])([A-Z])", "$1 $2");
-        }
-
-        /// <summary>Vanilla yellow center HUD — works for all clients, no client mod.</summary>
-        private static void ShowYellowHud(string text)
-        {
-            RatesFeedback.ShowYellowHud(text);
-        }
-
-        private static void PrintHelp(Action<string> reply)
-        {
-            string p = Plugin.Settings?.ChatCommandPrefix?.Value ?? "/";
-            var sb = new StringBuilder();
-            sb.AppendLine("ServerRates — chat or F5 (no admin needed):");
-            sb.AppendLine("  " + p + "sr_wood 9   " + p + "sr_meat 5   " + p + "sr_teleportall On");
-            sb.AppendLine("  " + p + "sr_resourcerate 200");
-            sb.AppendLine("  " + p + "sr_wood            (no value = show current)");
-            sb.AppendLine("  rates cmds | status | list | help");
-            sb.AppendLine("  rates set wood 9");
-            sb.AppendLine("Percent: 100=vanilla | Mult: 1=vanilla | Toggle: Unchanged|On|Off");
-            sb.Append("Applies LIVE.");
-            reply(sb.ToString());
-        }
-
-        private static void PrintAllCommands(Action<string> reply)
-        {
-            string p = Plugin.Settings?.ChatCommandPrefix?.Value ?? "/";
-            var lines = new List<string>();
-            foreach (KeyValuePair<string, string> pair in ShortToKey)
-                lines.Add(p + "sr_" + pair.Key + "  ->  " + pair.Value);
-            lines.Sort(StringComparer.OrdinalIgnoreCase);
-
-            var sb = new StringBuilder();
-            sb.AppendLine("ServerRates commands (" + lines.Count + "):");
-            foreach (string line in lines)
-                sb.AppendLine(line);
-            reply(sb.ToString().TrimEnd());
-        }
-
-        private static void PrintStatus(Action<string> reply, bool all)
-        {
-            if (Plugin.Settings == null)
-            {
-                reply("ServerRates: settings not ready");
-                return;
-            }
-
-            ModConfig c = Plugin.Settings;
-            var sb = new StringBuilder();
-            sb.AppendLine("ServerRates Active=" + Plugin.Active + " Enabled=" + c.Enabled.Value);
-
-            if (!all)
-            {
-                sb.AppendLine("ResourceRatePercent=" + c.ResourceRatePercent.Value + " (sr_resourcerate)");
-                sb.AppendLine("WoodDropMultiplier=" + c.WoodDropMultiplier.Value + " (sr_wood)");
-                sb.AppendLine("MeatDropMultiplier=" + c.MeatDropMultiplier.Value + " (sr_meat)");
-                sb.AppendLine("HideDropMultiplier=" + c.HideDropMultiplier.Value + " (sr_hide)");
-                sb.AppendLine("OreDropMultiplier=" + c.OreDropMultiplier.Value + " (sr_ore)");
-                sb.AppendLine("CategoryGroundAmp=" + c.CategoryGroundAmp.Value + " (sr_groundamp)");
-                sb.Append("rates list / rates cmds for more");
-                reply(sb.ToString());
-                return;
-            }
-
-            foreach (string key in GetAllKeys())
-            {
-                if (!TryGet(key, out string text, out _))
-                    continue;
-                string suffix = KeyToShort.TryGetValue(key, out string sh) ? "  [sr_" + sh + "]" : "";
-                sb.AppendLine(text + suffix);
-            }
-            reply(sb.ToString().TrimEnd());
-        }
-
-        private static bool TryGet(string key, out string text, out string error)
-        {
-            text = null;
-            error = null;
-            if (Plugin.Settings == null)
-            {
-                error = "settings not ready";
-                return false;
-            }
-
-            PropertyInfo prop = FindProp(key);
-            if (prop == null)
-            {
-                error = "unknown key '" + key + "'";
-                return false;
-            }
-
-            object entry = prop.GetValue(Plugin.Settings);
-            PropertyInfo valueProp = entry?.GetType().GetProperty("Value");
-            if (valueProp == null)
-            {
-                error = "no Value";
-                return false;
-            }
-
-            text = prop.Name + "=" + FormatValue(valueProp.GetValue(entry, null));
-            return true;
-        }
-
-        private static string FormatValue(object val)
-        {
-            if (val == null) return "";
-            if (val is float f) return f.ToString("0.###", CultureInfo.InvariantCulture);
-            if (val is bool b) return b ? "true" : "false";
-            return Convert.ToString(val, CultureInfo.InvariantCulture) ?? "";
-        }
-
-        private static PropertyInfo FindProp(string key)
-        {
-            return typeof(ModConfig).GetProperty(key, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-        }
-
-        private static bool TrySet(string key, string raw, out string error, out string applied)
-        {
-            error = null;
-            applied = null;
-            if (Plugin.Settings == null)
-            {
-                error = "settings not ready";
-                return false;
-            }
-
-            PropertyInfo prop = FindProp(key);
-            if (prop == null)
-            {
-                error = "unknown key '" + key + "'";
-                return false;
-            }
-
-            object entry = prop.GetValue(Plugin.Settings);
-            if (entry == null)
-            {
-                error = "null entry";
-                return false;
-            }
-
-            Type entryType = entry.GetType();
-            if (!IsConfigEntry(entryType))
-            {
-                error = "not a ConfigEntry";
-                return false;
-            }
-
-            Type valueType = entryType.GetGenericArguments()[0];
-            PropertyInfo valueProp = entryType.GetProperty("Value");
-            if (valueProp == null)
-            {
-                error = "no Value";
-                return false;
-            }
-
-            try
-            {
-                object parsed = ParseValue(valueType, raw, out error);
-                if (parsed == null && error != null)
-                    return false;
-                valueProp.SetValue(entry, parsed, null);
-                applied = FormatValue(parsed);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                error = ex.Message;
-                return false;
-            }
-        }
-
-        private static object ParseValue(Type valueType, string raw, out string error)
-        {
-            error = null;
-            string s = (raw ?? "").Trim();
-
-            if (valueType == typeof(bool))
-            {
-                if (bool.TryParse(s, out bool b)) return b;
-                if (s == "1" || s.Equals("on", StringComparison.OrdinalIgnoreCase) || s.Equals("yes", StringComparison.OrdinalIgnoreCase))
-                    return true;
-                if (s == "0" || s.Equals("off", StringComparison.OrdinalIgnoreCase) || s.Equals("no", StringComparison.OrdinalIgnoreCase))
-                    return false;
-                error = "bool expected (true/false/on/off)";
-                return null;
-            }
-            if (valueType == typeof(int))
-            {
-                if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int i)) return i;
-                error = "int expected";
-                return null;
-            }
-            if (valueType == typeof(float))
-            {
-                if (float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) return f;
-                error = "number expected";
-                return null;
-            }
-            if (valueType == typeof(string))
-            {
-                if (s.Equals("on", StringComparison.OrdinalIgnoreCase)) return "On";
-                if (s.Equals("off", StringComparison.OrdinalIgnoreCase)) return "Off";
-                if (s.Equals("unchanged", StringComparison.OrdinalIgnoreCase)) return "Unchanged";
-                return s;
-            }
-            error = "unsupported type " + valueType.Name;
-            return null;
+                Who = "admin",
+                CanWrite = true,
+                Reply = RatesFeedback.Say
+            });
         }
     }
 

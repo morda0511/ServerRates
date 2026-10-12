@@ -1,92 +1,124 @@
 using System;
 using System.IO;
-using BepInEx;
 using UnityEngine;
 
 namespace ServerRates
 {
     /// <summary>
-    /// Reload com.morda.serverrates.cfg from disk (Valheim Server Manager / manual edits)
-    /// and re-apply global keys without restarting the dedicated server.
+    /// Picks up edits of com.morda.serverrates.cfg (Valheim Server Manager, text editor, panel)
+    /// and applies them live. Polls the file's timestamp on the main thread: FileSystemWatcher
+    /// callbacks run on a pool thread where Unity's Time API throws, and they are missed entirely
+    /// on network shares and in some containers.
     /// </summary>
     internal static class ConfigWatch
     {
-        private static FileSystemWatcher _watcher;
-        private static float _reloadAt;
-        private static bool _pending;
-        private static string _cfgFileName;
+        private const float PollSeconds = 1f;
+        private const float SettleSeconds = 0.8f;
+        private const int MaxRetries = 5;
+
+        private static string _path;
+        private static DateTime _lastWrite;
+        private static float _nextPoll;
+        private static float _reloadAt = -1f;
+        private static int _retries;
 
         public static void Start()
         {
-            if (_watcher != null)
-                return;
-
-            try
-            {
-                _cfgFileName = Plugin.Instance != null
-                    ? Path.GetFileName(Plugin.Instance.Config.ConfigFilePath)
-                    : "com.morda.serverrates.cfg";
-
-                _watcher = new FileSystemWatcher(Paths.ConfigPath);
-                _watcher.Filter = _cfgFileName;
-                _watcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName;
-                _watcher.Changed += OnChanged;
-                _watcher.Created += OnChanged;
-                _watcher.EnableRaisingEvents = true;
-                Plugin.Log.LogInfo("ServerRates config watcher: " + Path.Combine(Paths.ConfigPath, _cfgFileName));
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogWarning("ServerRates config watcher failed: " + ex.Message);
-            }
+            _path = Plugin.Instance != null ? Plugin.Instance.Config.ConfigFilePath : null;
+            _lastWrite = Stamp();
+            if (_path != null)
+                Plugin.Log.LogInfo("ServerRates watching config: " + _path);
         }
 
-        /// <summary>Skip FileSystemWatcher reloads briefly after an in-game save (avoid race).</summary>
-        private static float _suppressUntil;
-
-        public static void SuppressReloadBriefly(float seconds = 2f)
+        /// <summary>Call after the mod saved the file itself so that save is not treated as an external edit.</summary>
+        public static void NotifySaved()
         {
-            _suppressUntil = Time.unscaledTime + Mathf.Max(0.1f, seconds);
-            _pending = false;
+            _lastWrite = Stamp();
+            _reloadAt = -1f;
         }
 
         public static void Tick()
         {
-            if (Time.unscaledTime < _suppressUntil)
+            if (_path == null)
+                return;
+
+            float now = Time.unscaledTime;
+
+            if (_reloadAt < 0f)
             {
-                _pending = false;
+                if (now < _nextPoll)
+                    return;
+                _nextPoll = now + PollSeconds;
+
+                DateTime stamp = Stamp();
+                if (stamp == _lastWrite)
+                    return;
+
+                _lastWrite = stamp;
+                _reloadAt = now + SettleSeconds;
+                _retries = 0;
                 return;
             }
 
-            if (!_pending || Time.unscaledTime < _reloadAt)
+            if (now < _reloadAt)
                 return;
 
-            _pending = false;
+            // Another edit while we were waiting: wait until the writer is done.
+            DateTime again = Stamp();
+            if (again != _lastWrite)
+            {
+                _lastWrite = again;
+                _reloadAt = now + SettleSeconds;
+                return;
+            }
+
+            _reloadAt = -1f;
             Reload();
         }
 
-        private static void OnChanged(object sender, FileSystemEventArgs e)
+        private static DateTime Stamp()
         {
-            _pending = true;
-            _reloadAt = Time.unscaledTime + 0.5f;
+            try
+            {
+                return _path != null && File.Exists(_path) ? File.GetLastWriteTimeUtc(_path) : DateTime.MinValue;
+            }
+            catch
+            {
+                return DateTime.MinValue;
+            }
         }
 
         private static void Reload()
         {
             try
             {
-                if (Plugin.Instance != null)
-                    Plugin.Instance.Config.Reload();
-
-                RateApplier.NotifyConfigReloaded();
-                RateApplier.ApplyGlobalKeys();
-                Plugin.Log.LogInfo("ServerRates config reloaded from disk and applied.");
-                CategoryGroundAmp.LogStatus();
+                Plugin.Instance.Config.Reload();
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogWarning("ServerRates reload failed: " + ex.Message);
+                // Typically the file is still locked by the writer: try again shortly.
+                if (++_retries <= MaxRetries)
+                {
+                    _reloadAt = Time.unscaledTime + 1f;
+                    return;
+                }
+                Plugin.Log.LogWarning("ServerRates: config reload failed: " + ex.Message);
+                return;
             }
+
+            var changed = Rates.TakeChanges();
+            RateApplier.ApplyGlobalKeys();
+            CategoryGroundAmp.LogStatus();
+
+            if (changed.Count == 0)
+            {
+                Plugin.Log.LogInfo("ServerRates: config reloaded, nothing changed.");
+                return;
+            }
+
+            Plugin.Log.LogInfo("ServerRates: config reloaded, " + changed.Count + " rate(s) changed.");
+            if (Plugin.Active)
+                RatesFeedback.AnnounceChanges(changed, "config");
         }
     }
 }

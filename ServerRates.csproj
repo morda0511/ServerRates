@@ -10,8 +10,8 @@
     <AssemblyName>ServerRates</AssemblyName>
     <RootNamespace>ServerRates</RootNamespace>
     <Product>ServerRates</Product>
-    <Version>1.4.9</Version>
-    <ModVersion>1.4.9</ModVersion>
+    <Version>1.7.0</Version>
+    <ModVersion>1.7.0</ModVersion>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <DebugType>portable</DebugType>
   </PropertyGroup>
@@ -33,6 +33,10 @@
       <HintPath>$(ManagedDir)\assembly_utils.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="Splatform">
+      <HintPath>$(ManagedDir)\Splatform.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>$(ManagedDir)\UnityEngine.dll</HintPath>
       <Private>False</Private>
@@ -51,10 +55,15 @@
     <PropertyGroup>
       <DeployDir>$(BepInExDir)\plugins\ServerRates</DeployDir>
       <ThunderstorePackRoot>$(MSBuildThisFileDirectory)thunderstore\ServerRates</ThunderstorePackRoot>
+      <DesktopModPackDir>C:\Users\morda\Desktop\Valheim mods\ServerRates</DesktopModPackDir>
     </PropertyGroup>
     <MakeDir Directories="$(DeployDir)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DeployDir)" OverwriteReadOnlyFiles="true" />
     <MakeDir Directories="$(ThunderstorePackRoot)\plugins\ServerRates" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ThunderstorePackRoot)\plugins\ServerRates" OverwriteReadOnlyFiles="true" />
+  </Target>
+  <Target Name="PackThunderstore" AfterTargets="Deploy" Condition="'$(Configuration)' == 'Release'">
+    <MakeDir Directories="$(DesktopModPackDir)" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)pack-thunderstore.ps1&quot; -Version &quot;$(ModVersion)&quot; -PackRoot &quot;$(MSBuildThisFileDirectory)thunderstore\ServerRates&quot; -OutputDir &quot;$(DesktopModPackDir)&quot; -PackageName &quot;ServerRates&quot;" Condition="Exists('$(MSBuildThisFileDirectory)pack-thunderstore.ps1')" />
   </Target>
 </Project>

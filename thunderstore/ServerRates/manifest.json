@@ -1,9 +1,9 @@
 {
-    "name": "ServerRates",
-    "version_number": "1.4.9",
-    "website_url": "https://github.com/morda0511/ServerRates",
-    "description": "Dedicated rates for PC + PS5/Xbox crossplay. Chat commands (/sr_wood), fine loot categories, live apply. Vanilla/console clients need no install.",
-    "dependencies": [
-        "denikson-BepInExPack_Valheim-5.4.2350"
-    ]
+    "name":  "ServerRates",
+    "version_number":  "1.7.0",
+    "website_url":  "https://github.com/morda0511/ServerRates",
+    "description":  "Dedicated rates for PC + PS5/Xbox. Console chat: sr_wood 9 (no slash). Live apply, presets, group commands. Vanilla clients need no install.",
+    "dependencies":  [
+                         "denikson-BepInExPack_Valheim-5.4.2350"
+                     ]
 }
